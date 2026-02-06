@@ -236,9 +236,22 @@ export function AuthProvider({ children }) {
       console.log('[Auth] Logout concluído');
     } catch (error) {
       console.error('[Auth] Erro no logout:', error.message);
-      // Mesmo com erro, limpa estado local
+    } finally {
+      try {
+        // Limpa sessão local para evitar reautenticação automática
+        localStorage.removeItem('oficina-auth-v2');
+      } catch (_) {}
+      // Limpa estado local
       setSession(undefined);
       setProfile(undefined);
+      // Para timers e listeners do sessionManager
+      try {
+        sessionManager.destroy();
+      } catch (_) {}
+      // Redireciona para login para garantir estado limpo
+      if (typeof window !== 'undefined') {
+        window.location.assign('/login');
+      }
     }
   };
 

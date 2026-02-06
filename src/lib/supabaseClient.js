@@ -1,7 +1,10 @@
 import { createClient } from '@supabase/supabase-js';
 
 // IMPORTANT: use direct access to import.meta.env so Vite can inline values at build time
-const { VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY } = import.meta.env;
+const rawUrl = import.meta.env.VITE_SUPABASE_URL;
+const rawKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const VITE_SUPABASE_URL = (rawUrl || '').trim();
+const VITE_SUPABASE_ANON_KEY = (rawKey || '').trim();
 
 if (!VITE_SUPABASE_URL || !VITE_SUPABASE_ANON_KEY) {
   // The app can still render, but auth features will be disabled without envs
