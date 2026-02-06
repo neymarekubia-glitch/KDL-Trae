@@ -275,40 +275,43 @@ export default function SuperAdmin() {
                     <form
                       key={u.user_id}
                       onSubmit={(e) => onUpdateUser(e, u.user_id)}
-                      className="grid gap-3 border rounded p-3"
-                      style={{ gridTemplateColumns: 'minmax(220px,1fr) 160px 180px 160px' }}
+                      className="border rounded p-3 space-y-3 w-full"
                     >
-                      <Input
-                        name="full_name"
-                        defaultValue={u.full_name || ''}
-                        placeholder="Nome completo"
-                        className="w-full"
-                      />
-                      <select
-                        name="role"
-                        defaultValue={u.role}
-                        className="border rounded p-2 w-full"
-                      >
-                        <option value="operator">Operador</option>
-                        <option value="manager">Gerente</option>
-                        <option value="admin">Admin</option>
-                      </select>
-                      <Input
-                        name="password"
-                        type="password"
-                        placeholder="Nova senha (opcional)"
-                        className="w-full"
-                      />
-                      <div className="flex gap-2 justify-end">
-                        <Button type="submit" disabled={loading}>Salvar</Button>
-                        <Button
-                          type="button"
-                          variant="destructive"
-                          onClick={() => onDeleteUser(u.user_id)}
-                          disabled={loading}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <Input
+                          name="full_name"
+                          defaultValue={u.full_name || ''}
+                          placeholder="Nome completo"
+                          className="w-full"
+                        />
+                        <select
+                          name="role"
+                          defaultValue={u.role}
+                          className="border rounded p-2 w-full"
                         >
-                          Remover
-                        </Button>
+                          <option value="operator">Operador</option>
+                          <option value="manager">Gerente</option>
+                          <option value="admin">Admin</option>
+                        </select>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-center">
+                        <Input
+                          name="password"
+                          type="password"
+                          placeholder="Nova senha (opcional)"
+                          className="w-full"
+                        />
+                        <div className="flex gap-2 justify-end">
+                          <Button type="submit" disabled={loading}>Salvar</Button>
+                          <Button
+                            type="button"
+                            variant="destructive"
+                            onClick={() => onDeleteUser(u.user_id)}
+                            disabled={loading}
+                          >
+                            Remover
+                          </Button>
+                        </div>
                       </div>
                     </form>
                   ))}
