@@ -1,4 +1,4 @@
-import { createEntityApi } from './apiClient';
+import { createEntityApi, apiClient } from './apiClient';
 
 export const Customer = createEntityApi('customers');
 

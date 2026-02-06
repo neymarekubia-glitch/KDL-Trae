@@ -272,23 +272,42 @@ export default function SuperAdmin() {
                 <h3 className="font-semibold mb-2">Usuários desta oficina</h3>
                 <div className="space-y-2">
                   {tenantUsers.map((u) => (
-                    <form key={u.user_id} onSubmit={(e) => onUpdateUser(e, u.user_id)} className="grid grid-cols-1 md:grid-cols-5 gap-3 border rounded p-3">
-                      <div className="md:col-span-2">
-                        <Input name="full_name" defaultValue={u.full_name || ''} placeholder="Nome completo" />
-                      </div>
-                      <div>
-                        <select name="role" defaultValue={u.role} className="border rounded p-2 w-full">
-                          <option value="operator">Operador</option>
-                          <option value="manager">Gerente</option>
-                          <option value="admin">Admin</option>
-                        </select>
-                      </div>
-                      <div>
-                        <Input name="password" type="password" placeholder="Nova senha (opcional)" />
-                      </div>
-                      <div className="flex gap-2">
+                    <form
+                      key={u.user_id}
+                      onSubmit={(e) => onUpdateUser(e, u.user_id)}
+                      className="flex flex-wrap md:flex-nowrap items-center gap-3 border rounded p-3"
+                    >
+                      <Input
+                        name="full_name"
+                        defaultValue={u.full_name || ''}
+                        placeholder="Nome completo"
+                        className="flex-1 min-w-[220px]"
+                      />
+                      <select
+                        name="role"
+                        defaultValue={u.role}
+                        className="border rounded p-2 w-40"
+                      >
+                        <option value="operator">Operador</option>
+                        <option value="manager">Gerente</option>
+                        <option value="admin">Admin</option>
+                      </select>
+                      <Input
+                        name="password"
+                        type="password"
+                        placeholder="Nova senha (opcional)"
+                        className="w-48"
+                      />
+                      <div className="ml-auto flex gap-2 shrink-0">
                         <Button type="submit" disabled={loading}>Salvar</Button>
-                        <Button type="button" variant="destructive" onClick={() => onDeleteUser(u.user_id)} disabled={loading}>Remover</Button>
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          onClick={() => onDeleteUser(u.user_id)}
+                          disabled={loading}
+                        >
+                          Remover
+                        </Button>
                       </div>
                     </form>
                   ))}
