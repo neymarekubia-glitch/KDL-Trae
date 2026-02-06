@@ -159,39 +159,39 @@ export default function AdminUsers() {
           )}
         </CardHeader>
         <CardContent>
-          {!tenantName && (
-            <div className="mb-6">
-              <p className="text-sm text-gray-600 mb-2">
-                Nenhuma empresa vinculada ao seu usuário. Crie a oficina e vincule seu usuário.
-              </p>
-              <form onSubmit={onCreateTenant} className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <Input name="tenant_name" placeholder="Nome interno (ex: oficina-joao)" required />
-                <Input name="tenant_display_name" placeholder="Nome exibido (ex: Oficina do João)" />
-                <Input name="tenant_logo_url" placeholder="Logo URL (opcional)" />
-                <div className="md:col-span-3">
-                  <Button type="submit" disabled={tenantLoading}>Criar Oficina</Button>
-                </div>
-              </form>
-              {!!tenants?.length && (
-                <div className="mt-4">
-                  <p className="text-sm text-gray-500 mb-2">Oficinas existentes (somente para admin do sistema):</p>
-                  <div className="space-y-2">
-                    {tenants.map((t) => (
-                      <div key={t.id} className="flex items-center justify-between border rounded p-3">
-                        <div className="text-sm">
-                          <div className="font-medium">{t.display_name || t.name}</div>
-                          <div className="text-gray-600">{t.id}</div>
-                        </div>
-                        <Button variant="outline" onClick={() => onAssignTenant(t.id)} disabled={tenantLoading}>
-                          Vincular-me a esta oficina
-                        </Button>
+          <div className="mb-6">
+            <p className="text-sm text-gray-600 mb-2">
+              {tenantName
+                ? 'Você já está vinculado a uma empresa. Se desejar, crie outra oficina e vincule-se a ela.'
+                : 'Nenhuma empresa vinculada ao seu usuário. Crie a oficina e vincule seu usuário.'}
+            </p>
+            <form onSubmit={onCreateTenant} className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <Input name="tenant_name" placeholder="Nome interno (ex: oficina-joao)" required />
+              <Input name="tenant_display_name" placeholder="Nome exibido (ex: Oficina do João)" />
+              <Input name="tenant_logo_url" placeholder="Logo URL (opcional)" />
+              <div className="md:col-span-3">
+                <Button type="submit" disabled={tenantLoading}>Criar Oficina</Button>
+              </div>
+            </form>
+            {!!tenants?.length && (
+              <div className="mt-4">
+                <p className="text-sm text-gray-500 mb-2">Oficinas existentes (somente para admin do sistema):</p>
+                <div className="space-y-2">
+                  {tenants.map((t) => (
+                    <div key={t.id} className="flex items-center justify-between border rounded p-3">
+                      <div className="text-sm">
+                        <div className="font-medium">{t.display_name || t.name}</div>
+                        <div className="text-gray-600">{t.id}</div>
                       </div>
-                    ))}
-                  </div>
+                      <Button variant="outline" onClick={() => onAssignTenant(t.id)} disabled={tenantLoading}>
+                        Vincular-me a esta oficina
+                      </Button>
+                    </div>
+                  ))}
                 </div>
-              )}
-            </div>
-          )}
+              </div>
+            )}
+          </div>
 
           <form onSubmit={onCreate} className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-6">
             <Input name="full_name" placeholder="Nome completo" />

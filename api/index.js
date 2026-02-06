@@ -261,10 +261,7 @@ export default async function handler(req, res) {
           const logo_url = body?.logo_url ? String(body.logo_url).trim() : null;
           if (!name) return badRequest(res, 'missing_name');
 
-          // Only allow system admin (no tenant) or shared secret to create tenants
-          if (!sharedSecretUsed && adminTenantId) {
-            return badRequest(res, 'system_admin_required');
-          }
+          // Allow any authenticated admin or shared secret to create tenants
 
           const { data, error } = await supabase
             .from('tenants')
@@ -273,12 +270,7 @@ export default async function handler(req, res) {
             .single();
           if (error) return badRequest(res, error.message);
 
-          // If admin has no tenant, optionally assign to this newly created tenant
-          if (adminUserId && !adminTenantId) {
-            await supabase
-              .from('profiles')
-              .upsert({ user_id: adminUserId, tenant_id: data.id }, { onConflict: 'user_id' });
-          }
+          // Assignment to tenant is handled via /api/admin/assign-tenant
 
           return ok(res, data);
         }
