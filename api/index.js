@@ -421,8 +421,15 @@ export default async function handler(req, res) {
 
     if (req.method === 'GET') {
       try {
+        const tenantFilter = (new URL(req.url, 'http://localhost')).searchParams.get('tenant_id');
         let q = supabase.from('profiles').select('user_id, full_name, role, tenant_id');
-        if (adminTenantId) q = q.eq('tenant_id', adminTenantId);
+        if (tenantFilter === 'none') {
+          q = q.is('tenant_id', null);
+        } else if (tenantFilter) {
+          q = q.eq('tenant_id', tenantFilter);
+        } else if (adminTenantId) {
+          q = q.eq('tenant_id', adminTenantId);
+        }
         const { data, error } = await q;
         if (error) return badRequest(res, error.message);
         return ok(res, (data || []).map(({ tenant_id, ...rest }) => rest));
@@ -461,6 +468,43 @@ export default async function handler(req, res) {
     }
 
     return notFound(res);
+  }
+
+  // Superadmin: assign any user to a tenant
+  if (resource === 'admin' && idMaybe === 'assign-user') {
+    try {
+      const authHeader = req.headers['authorization'] || '';
+      const bearerToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+      const sharedSecretUsed = API_SHARED_SECRET && bearerToken === API_SHARED_SECRET;
+      const authz = await authenticateAdmin(req);
+      if (!sharedSecretUsed && !authz.ok) return unauthorized(res);
+      const isSystemAdmin = sharedSecretUsed ? true : !!authz.isSystemAdmin;
+      if (!isSystemAdmin && !sharedSecretUsed) {
+        return badRequest(res, 'system_admin_required');
+      }
+      if (req.method !== 'POST') return notFound(res);
+      const raw = await parseBody(req);
+      const body = normalizePayload(raw);
+      const userId = String(body?.user_id || '').trim();
+      const targetTenantId = String(body?.tenant_id || '').trim();
+      if (!userId || !targetTenantId) return badRequest(res, 'missing_user_or_tenant');
+      const { data: tenantExists } = await supabase
+        .from('tenants')
+        .select('id')
+        .eq('id', targetTenantId)
+        .maybeSingle();
+      if (!tenantExists) return badRequest(res, 'tenant_not_found');
+      const { error: upErr } = await supabase
+        .from('profiles')
+        .upsert({ user_id: userId, tenant_id: targetTenantId }, { onConflict: 'user_id' });
+      if (upErr) return badRequest(res, upErr.message);
+      return ok(res, { assigned: true, user_id: userId, tenant_id: targetTenantId });
+    } catch (e) {
+      cors(res);
+      res.statusCode = 500;
+      res.setHeader('Content-Type', 'application/json');
+      return res.end(JSON.stringify({ error: 'internal_error', message: e?.message || String(e) }));
+    }
   }
 
   if (!table) return notFound(res);

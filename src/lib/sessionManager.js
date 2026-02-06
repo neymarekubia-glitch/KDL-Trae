@@ -36,7 +36,7 @@ class SessionManager {
   async initialize() {
     if (this.isInitialized || !supabase) return;
     
-    console.log('[SessionManager] Inicializando gerenciador de sessão...');
+    
     
     try {
       // 1. Recupera sessão atual
@@ -46,18 +46,18 @@ class SessionManager {
         console.warn('[SessionManager] Erro ao recuperar sessão:', error.message);
         this.currentAuthState = this.authStates.UNAUTHENTICATED;
       } else if (session) {
-        console.log('[SessionManager] Sessão ativa encontrada');
+        
         this.currentSession = session;
         this.currentAuthState = this.authStates.AUTHENTICATED;
         this.scheduleTokenRefresh(session);
       } else {
-        console.log('[SessionManager] Nenhuma sessão ativa');
+        
         this.currentAuthState = this.authStates.UNAUTHENTICATED;
       }
 
       // 2. Configura listener de mudanças de autenticação
       supabase.auth.onAuthStateChange((event, session) => {
-        console.log('[SessionManager] Auth state change:', event);
+        
         
         switch (event) {
           case 'SIGNED_IN':
@@ -75,7 +75,7 @@ class SessionManager {
             break;
             
           case 'TOKEN_REFRESHED':
-            console.log('[SessionManager] Token renovado automaticamente');
+            
             this.currentSession = session;
             this.currentAuthState = this.authStates.AUTHENTICATED;
             this.scheduleTokenRefresh(session);
@@ -88,7 +88,7 @@ class SessionManager {
             break;
             
           default:
-            console.log('[SessionManager] Evento de auth desconhecido:', event);
+            
         }
       });
 
@@ -96,7 +96,7 @@ class SessionManager {
       this.startPeriodicSessionCheck();
       
       this.isInitialized = true;
-      console.log('[SessionManager] Inicialização concluída');
+      
       
     } catch (error) {
       console.error('[SessionManager] Erro na inicialização:', error);
@@ -193,7 +193,7 @@ class SessionManager {
    * Verifica periodicamente se a sessão ainda é válida
    */
   startPeriodicSessionCheck() {
-    // Verifica a cada 2 minutos
+    // Verifica a cada 5 minutos
     this.sessionCheckInterval = setInterval(async () => {
       if (this.currentAuthState !== this.authStates.AUTHENTICATED) return;
       
@@ -201,13 +201,13 @@ class SessionManager {
         const { data: { session }, error } = await supabase.auth.getSession();
         
         if (error || !session) {
-          console.warn('[SessionManager] Sessão perdida detectada na verificação periódica');
+          
           this.handleAuthenticationFailure();
         }
       } catch (error) {
-        console.warn('[SessionManager] Erro na verificação periódica:', error.message);
+        
       }
-    }, 2 * 60 * 1000); // 2 minutos
+    }, 5 * 60 * 1000);
   }
 
   /**
