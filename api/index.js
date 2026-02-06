@@ -486,13 +486,18 @@ export default async function handler(req, res) {
           return badRequest(res, 'invalid_role');
         }
 
-        if (adminTenantId) {
+        if (adminTenantId && !isSystemAdmin) {
           const { data: prof } = await supabase
             .from('profiles')
             .select('tenant_id')
             .eq('user_id', userId)
             .maybeSingle();
-          if (prof && prof.tenant_id !== adminTenantId) return unauthorized(res);
+          if (prof && prof.tenant_id !== adminTenantId) {
+            cors(res);
+            res.statusCode = 403;
+            res.setHeader('Content-Type', 'application/json');
+            return res.end(JSON.stringify({ error: 'forbidden_other_tenant' }));
+          }
         }
 
         if (password) {
@@ -527,9 +532,14 @@ export default async function handler(req, res) {
         const userId = String(raw?.user_id || '').trim();
         if (!userId) return badRequest(res, 'missing_user_id');
 
-        if (adminTenantId) {
+        if (adminTenantId && !isSystemAdmin) {
           const { data: prof } = await supabase.from('profiles').select('tenant_id').eq('user_id', userId).maybeSingle();
-          if (prof && prof.tenant_id !== adminTenantId) return unauthorized(res);
+          if (prof && prof.tenant_id !== adminTenantId) {
+            cors(res);
+            res.statusCode = 403;
+            res.setHeader('Content-Type', 'application/json');
+            return res.end(JSON.stringify({ error: 'forbidden_other_tenant' }));
+          }
         }
 
         const { error: delAuthErr } = await supabase.auth.admin.deleteUser(userId);
