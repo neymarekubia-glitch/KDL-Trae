@@ -7,6 +7,10 @@ export const Vehicle = createEntityApi('vehicles');
 export const ServiceItem = createEntityApi('service-items');
 
 export const Quote = createEntityApi('quotes');
+Quote.approve = async (id, options) => {
+  if (!id) throw new Error('approve requires a valid quote id');
+  return apiClient.request('POST', '/quotes/approve', { body: { quote_id: id }, ...(options || {}) });
+};
 
 export const QuoteItem = createEntityApi('quote-items');
 

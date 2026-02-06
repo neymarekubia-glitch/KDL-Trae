@@ -103,6 +103,27 @@ export default function SuperAdmin() {
     }
   }
 
+  async function onDeleteTenant(id) {
+    setLoading(true);
+    setError('');
+    try {
+      await apiClient.request('DELETE', '/admin/tenants', {
+        body: { id },
+        headers,
+      });
+      if (selectedTenantId === id) {
+        setSelectedTenantId('');
+        setTenantUsers([]);
+        setUnassignedUsers([]);
+      }
+      await loadTenants();
+    } catch (e) {
+      setError(e?.message || 'Falha ao excluir oficina');
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function onAssignUser(userId, tenantId) {
     setLoading(true);
     setError('');
@@ -146,6 +167,49 @@ export default function SuperAdmin() {
       setError(e?.message || 'Falha ao criar usuário');
     } finally {
       setCreatingUser(false);
+    }
+  }
+
+  async function onUpdateUser(e, userId) {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+    const form = new FormData(e.currentTarget);
+    const full_name = String(form.get('full_name') || '').trim();
+    const role = String(form.get('role') || '').trim().toLowerCase();
+    const password = String(form.get('password') || '').trim();
+    try {
+      await apiClient.request('PUT', '/admin/users', {
+        headers,
+        body: {
+          user_id: userId,
+          full_name,
+          role,
+          password: password || undefined,
+        },
+      });
+      await selectTenant(selectedTenantId);
+    } catch (e) {
+      setError(e?.message || 'Falha ao atualizar usuário');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function onDeleteUser(userId) {
+    if (!confirm('Remover usuário? Esta ação é irreversível.')) return;
+    setLoading(true);
+    setError('');
+    try {
+      await apiClient.request('DELETE', '/admin/users', {
+        body: { user_id: userId },
+        headers,
+      });
+      await selectTenant(selectedTenantId);
+    } catch (e) {
+      setError(e?.message || 'Falha ao remover usuário');
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -194,6 +258,9 @@ export default function SuperAdmin() {
                   <Button variant="outline" onClick={() => onToggleTenantStatus(t.id, t.status || 'active')} disabled={loading}>
                     {t.status === 'paused' ? 'Ativar' : 'Pausar'}
                   </Button>
+                  <Button variant="destructive" onClick={() => onDeleteTenant(t.id)} disabled={loading}>
+                    Excluir
+                  </Button>
                 </div>
               </div>
             ))}
@@ -205,12 +272,25 @@ export default function SuperAdmin() {
                 <h3 className="font-semibold mb-2">Usuários desta oficina</h3>
                 <div className="space-y-2">
                   {tenantUsers.map((u) => (
-                    <div key={u.user_id} className="flex items-center justify-between border rounded p-3">
-                      <div className="text-sm">
-                        <div className="font-medium">{u.full_name || 'Sem nome'}</div>
-                        <div className="text-gray-600">{u.user_id}</div>
+                    <form key={u.user_id} onSubmit={(e) => onUpdateUser(e, u.user_id)} className="grid grid-cols-1 md:grid-cols-5 gap-3 border rounded p-3">
+                      <div className="md:col-span-2">
+                        <Input name="full_name" defaultValue={u.full_name || ''} placeholder="Nome completo" />
                       </div>
-                    </div>
+                      <div>
+                        <select name="role" defaultValue={u.role} className="border rounded p-2 w-full">
+                          <option value="operator">Operador</option>
+                          <option value="manager">Gerente</option>
+                          <option value="admin">Admin</option>
+                        </select>
+                      </div>
+                      <div>
+                        <Input name="password" type="password" placeholder="Nova senha (opcional)" />
+                      </div>
+                      <div className="flex gap-2">
+                        <Button type="submit" disabled={loading}>Salvar</Button>
+                        <Button type="button" variant="destructive" onClick={() => onDeleteUser(u.user_id)} disabled={loading}>Remover</Button>
+                      </div>
+                    </form>
                   ))}
                   {!tenantUsers.length && (
                     <div className="text-sm text-gray-500">Nenhum usuário vinculado a esta oficina</div>

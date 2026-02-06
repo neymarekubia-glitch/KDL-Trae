@@ -19,7 +19,6 @@ export default function ServiceItemForm({ item, onSubmit, onCancel }) {
     supplier_id: "",
     current_stock: 0,
     minimum_stock: 0,
-    labor_cost: 0,
     description: "",
     is_active: true
   });
@@ -45,7 +44,6 @@ export default function ServiceItemForm({ item, onSubmit, onCancel }) {
       ...formData,
       sale_price: sanitizeNumber(formData.sale_price, 0),
       cost_price: sanitizeNumber(formData.cost_price, 0),
-      labor_cost: sanitizeNumber(formData.labor_cost, 0),
       current_stock: Math.max(0, parseInt(formData.current_stock ?? 0, 10) || 0),
       minimum_stock: Math.max(0, parseInt(formData.minimum_stock ?? 0, 10) || 0),
       supplier_id: formData.supplier_id ? formData.supplier_id : null,
@@ -196,23 +194,7 @@ export default function ServiceItemForm({ item, onSubmit, onCancel }) {
               </>
             )}
 
-            {formData.type === "servico" && (
-              <div className="space-y-2 p-4 bg-blue-50 rounded-lg border border-blue-200">
-                <Label htmlFor="labor_cost">Custo de Mão de Obra (R$)</Label>
-                <Input
-                  id="labor_cost"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={formData.labor_cost === '' ? '' : formData.labor_cost}
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    setFormData({ ...formData, labor_cost: value === '' ? '' : parseFloat(value) });
-                  }}
-                  className="border-gray-300"
-                />
-              </div>
-            )}
+            {false && <div />}
 
             <div className="space-y-2">
               <Label htmlFor="description">Descrição</Label>

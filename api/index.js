@@ -313,6 +313,22 @@ export default async function handler(req, res) {
           return ok(res, data || []);
         }
 
+        if (req.method === 'DELETE') {
+          if (!sharedSecretUsed && !isSystemAdmin) {
+            return badRequest(res, 'system_admin_required');
+          }
+          const raw = await parseBody(req);
+          const body = normalizePayload(raw);
+          const id = String(body?.id || '').trim();
+          if (!id) return badRequest(res, 'missing_id');
+          const { error: delErr } = await supabase
+            .from('tenants')
+            .delete()
+            .eq('id', id);
+          if (delErr) return badRequest(res, delErr.message);
+          return ok(res, { deleted: true, id });
+        }
+
         return notFound(res);
       }
 
@@ -455,6 +471,56 @@ export default async function handler(req, res) {
       }
     }
 
+    if (req.method === 'PUT') {
+      try {
+        const raw = await parseBody(req);
+        const body = normalizePayload(raw);
+        const userId = String(body?.user_id || '').trim();
+        if (!userId) return badRequest(res, 'missing_user_id');
+        const updates = {};
+        const role = body?.role ? String(body.role).toLowerCase() : undefined;
+        const fullName = body?.full_name !== undefined ? String(body.full_name) : undefined;
+        const password = body?.password ? String(body.password) : undefined;
+
+        if (role && !['admin', 'manager', 'operator'].includes(role)) {
+          return badRequest(res, 'invalid_role');
+        }
+
+        if (adminTenantId) {
+          const { data: prof } = await supabase
+            .from('profiles')
+            .select('tenant_id')
+            .eq('user_id', userId)
+            .maybeSingle();
+          if (prof && prof.tenant_id !== adminTenantId) return unauthorized(res);
+        }
+
+        if (password) {
+          const { error: updErr } = await supabase.auth.admin.updateUserById(userId, { password });
+          if (updErr) return badRequest(res, updErr.message);
+        }
+
+        const profilePayload = {};
+        if (fullName !== undefined) profilePayload.full_name = fullName || null;
+        if (role !== undefined) profilePayload.role = role;
+
+        if (Object.keys(profilePayload).length > 0) {
+          const { error: upErr } = await supabase
+            .from('profiles')
+            .update(profilePayload)
+            .eq('user_id', userId);
+          if (upErr) return badRequest(res, upErr.message);
+        }
+
+        return ok(res, { updated: true, user_id: userId });
+      } catch (e) {
+        cors(res);
+        res.statusCode = 500;
+        res.setHeader('Content-Type', 'application/json');
+        return res.end(JSON.stringify({ error: 'internal_error', message: e?.message || String(e) }));
+      }
+    }
+
     if (req.method === 'DELETE') {
       try {
         const raw = await parseBody(req);
@@ -521,6 +587,59 @@ export default async function handler(req, res) {
     }
   }
 
+  // Fast approval flow for quotes
+  if (resource === 'quotes' && idMaybe === 'approve') {
+    try {
+      const authz = await getAuthAndTenant(req);
+      if (!authz.authorized) return unauthorized(res);
+      const tenantId = authz.tenantId || null;
+      if (!tenantId) return badRequest(res, 'tenant_required');
+      if (req.method !== 'POST') return notFound(res);
+      const raw = await parseBody(req);
+      const body = normalizePayload(raw);
+      const quoteId = String(body?.quote_id || '').trim();
+      if (!quoteId) return badRequest(res, 'missing_quote_id');
+
+      const { data: quote, error: qErr } = await supabase
+        .from('quotes')
+        .select('id, quote_number, customer_id, vehicle_id, vehicle_mileage')
+        .eq('id', quoteId)
+        .eq('tenant_id', tenantId)
+        .maybeSingle();
+      if (qErr) return badRequest(res, qErr.message);
+      if (!quote) return badRequest(res, 'quote_not_found');
+
+      const { error: upErr } = await supabase
+        .from('quotes')
+        .update({ status: 'aprovada', approved_date: new Date().toISOString() })
+        .eq('id', quoteId)
+        .eq('tenant_id', tenantId);
+      if (upErr) return badRequest(res, upErr.message);
+
+      const orderNumber = `OS-${quote.quote_number}`;
+      const { data: serviceOrder, error: soErr } = await supabase
+        .from('service_orders')
+        .insert({
+          quote_id: quote.id,
+          order_number: orderNumber,
+          customer_id: quote.customer_id,
+          vehicle_id: quote.vehicle_id,
+          vehicle_mileage: quote.vehicle_mileage,
+          status: 'aguardando',
+          tenant_id: tenantId,
+        })
+        .select('*')
+        .single();
+      if (soErr) return badRequest(res, soErr.message);
+
+      return ok(res, { approved: true, order_number: orderNumber, service_order_id: serviceOrder.id });
+    } catch (e) {
+      cors(res);
+      res.statusCode = 500;
+      res.setHeader('Content-Type', 'application/json');
+      return res.end(JSON.stringify({ error: 'internal_error', message: e?.message || String(e) }));
+    }
+  }
   // Superadmin: get current user's profile via backend (fallback when client fails)
   if (resource === 'admin' && idMaybe === 'profile') {
     try {

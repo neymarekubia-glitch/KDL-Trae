@@ -106,12 +106,7 @@ export default function ServiceItemCard({ item, supplier, onEdit, onDelete, onTo
             </>
           )}
 
-          {isService && item.labor_cost > 0 && (
-            <div className="flex items-center gap-2 text-gray-600">
-              <Wrench className={`w-4 h-4 text-${color}-600`} />
-              <span className="text-sm">Mão de obra: R$ {item.labor_cost.toFixed(2)}</span>
-            </div>
-          )}
+          {false && <div />}
 
           {item.description && (
             <div className="pt-2 border-t">
