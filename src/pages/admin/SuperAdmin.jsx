@@ -275,18 +275,19 @@ export default function SuperAdmin() {
                     <form
                       key={u.user_id}
                       onSubmit={(e) => onUpdateUser(e, u.user_id)}
-                      className="flex flex-wrap md:flex-nowrap items-center gap-3 border rounded p-3"
+                      className="grid gap-3 border rounded p-3"
+                      style={{ gridTemplateColumns: 'minmax(220px,1fr) 160px 180px 160px' }}
                     >
                       <Input
                         name="full_name"
                         defaultValue={u.full_name || ''}
                         placeholder="Nome completo"
-                        className="flex-1 min-w-[220px]"
+                        className="w-full"
                       />
                       <select
                         name="role"
                         defaultValue={u.role}
-                        className="border rounded p-2 w-40"
+                        className="border rounded p-2 w-full"
                       >
                         <option value="operator">Operador</option>
                         <option value="manager">Gerente</option>
@@ -296,9 +297,9 @@ export default function SuperAdmin() {
                         name="password"
                         type="password"
                         placeholder="Nova senha (opcional)"
-                        className="w-48"
+                        className="w-full"
                       />
-                      <div className="ml-auto flex gap-2 shrink-0">
+                      <div className="flex gap-2 justify-end">
                         <Button type="submit" disabled={loading}>Salvar</Button>
                         <Button
                           type="button"
