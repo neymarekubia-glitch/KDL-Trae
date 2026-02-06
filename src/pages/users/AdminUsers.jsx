@@ -12,6 +12,7 @@ export default function AdminUsers() {
   const [error, setError] = useState('');
   const [tenants, setTenants] = useState([]);
   const [tenantLoading, setTenantLoading] = useState(false);
+  const [canManageTenants, setCanManageTenants] = useState(false);
 
   const canManage = role === 'admin';
   const headers = useMemo(() => {
@@ -37,9 +38,11 @@ export default function AdminUsers() {
     try {
       const list = await apiClient.request('GET', '/admin/tenants', { headers });
       setTenants(Array.isArray(list) ? list : []);
+      setCanManageTenants(true);
     } catch (e) {
       // Apenas loga; listar tenants requer system admin
       console.warn('[Admin] Falha ao listar tenants:', e?.message || e);
+      setCanManageTenants(false);
     } finally {
       setTenantLoading(false);
     }
@@ -159,6 +162,7 @@ export default function AdminUsers() {
           )}
         </CardHeader>
         <CardContent>
+          {canManageTenants && (
           <div className="mb-6">
             <p className="text-sm text-gray-600 mb-2">
               {tenantName
@@ -192,6 +196,7 @@ export default function AdminUsers() {
               </div>
             )}
           </div>
+          )}
 
           <form onSubmit={onCreate} className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-6">
             <Input name="full_name" placeholder="Nome completo" />

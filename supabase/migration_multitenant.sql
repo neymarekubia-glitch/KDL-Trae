@@ -23,7 +23,8 @@ on conflict do nothing;
 -- Campos opcionais por oficina para personalização de PDFs / identidade visual
 alter table public.tenants
   add column if not exists display_name text,
-  add column if not exists logo_url text;
+  add column if not exists logo_url text,
+  add column if not exists status text default 'active' check (status in ('active','paused'));
 
 -- 2) Criar tabela profiles se não existir, depois adicionar tenant_id
 do $$ begin

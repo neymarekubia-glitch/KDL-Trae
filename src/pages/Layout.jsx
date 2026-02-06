@@ -29,7 +29,7 @@ import {
   SidebarTrigger,
 } from "@/components/ui/sidebar";
 
-function buildNavigationItems(role) {
+function buildNavigationItems(role, user) {
   const base = [
   {
     title: "Dashboard",
@@ -70,13 +70,17 @@ function buildNavigationItems(role) {
   if (role === 'admin') {
     base.push({ title: 'Usuários', url: '/admin/users', icon: Users });
   }
+  const superEmail = import.meta.env.VITE_SUPERADMIN_EMAIL;
+  if (superEmail && user?.email && user.email.toLowerCase() === String(superEmail).toLowerCase()) {
+    base.push({ title: 'Painel Administrador', url: '/admin/super', icon: LayoutDashboard });
+  }
   return base;
 }
 
 export default function Layout({ children, currentPageName }) {
   const location = useLocation();
   const { user, profile, role, tenantName, connectionStatus, signOut } = useAuth();
-  const navigationItems = buildNavigationItems(role);
+  const navigationItems = buildNavigationItems(role, user);
   const [lastPing, setLastPing] = useState(Date.now());
 
   // Monitor network connectivity - apenas eventos nativos (mais eficiente)

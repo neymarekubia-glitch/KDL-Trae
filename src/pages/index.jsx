@@ -29,6 +29,7 @@ import Login from './Login.jsx';
 import { useAuth } from '@/hooks/useAuth.jsx';
 import { hasAccess } from '@/utils';
 import AdminUsers from './users/AdminUsers.jsx';
+import SuperAdmin from './admin/SuperAdmin.jsx';
 
 function Protected({ children, pageName }) {
     const { isReady, session, role } = useAuth();
@@ -118,6 +119,7 @@ function PagesContent() {
                       <Route path="/VehicleSearch" element={<Protected pageName="VehicleSearch"><VehicleSearch /></Protected>} />
                       <Route path="/PendingPayments" element={<Protected pageName="PendingPayments"><PendingPayments /></Protected>} />
                       <Route path="/admin/users" element={<Protected pageName="AdminUsers"><AdminUsers /></Protected>} />
+                      <Route path="/admin/super" element={<Protected pageName="Dashboard"><SuperAdmin /></Protected>} />
                     </Routes>
                   </Layout>
                 </Protected>

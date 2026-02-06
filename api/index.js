@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const API_SHARED_SECRET = process.env.API_SHARED_SECRET;
+const SUPERADMIN_EMAIL = process.env.SUPERADMIN_EMAIL;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
   auth: { persistSession: false },
@@ -111,8 +112,11 @@ async function authenticateAdmin(req) {
   if (!token) return { ok: false, reason: 'missing_token' };
   const profile = await getProfileFromToken(token);
   if (!profile) return { ok: false, reason: 'invalid_token' };
-  if (profile.role !== 'admin') return { ok: false, reason: 'not_admin' };
-  return { ok: true, userId: profile.userId, tenantId: profile.tenantId };
+  const { data: userData } = await supabase.auth.getUser(token);
+  const email = userData?.user?.email || '';
+  const isSystemAdmin = SUPERADMIN_EMAIL && email && email.toLowerCase() === SUPERADMIN_EMAIL.toLowerCase();
+  if (profile.role !== 'admin' && !isSystemAdmin) return { ok: false, reason: 'not_admin' };
+  return { ok: true, userId: profile.userId, tenantId: profile.tenantId, email, isSystemAdmin };
 }
 
 async function parseBody(req) {
@@ -251,17 +255,19 @@ export default async function handler(req, res) {
       if (!sharedSecretUsed && !authz.ok) return unauthorized(res);
       const adminUserId = sharedSecretUsed ? null : authz.userId;
       const adminTenantId = sharedSecretUsed ? null : (authz.tenantId || null);
+      const isSystemAdmin = sharedSecretUsed ? true : !!authz.isSystemAdmin;
 
       if (idMaybe === 'tenants') {
         if (req.method === 'POST') {
+          if (!isSystemAdmin && !sharedSecretUsed) {
+            return badRequest(res, 'system_admin_required');
+          }
           const raw = await parseBody(req);
           const body = normalizePayload(raw);
           const name = String(body?.name || '').trim();
           const display_name = body?.display_name ? String(body.display_name).trim() : null;
           const logo_url = body?.logo_url ? String(body.logo_url).trim() : null;
           if (!name) return badRequest(res, 'missing_name');
-
-          // Allow any authenticated admin or shared secret to create tenants
 
           const { data, error } = await supabase
             .from('tenants')
@@ -270,14 +276,33 @@ export default async function handler(req, res) {
             .single();
           if (error) return badRequest(res, error.message);
 
-          // Assignment to tenant is handled via /api/admin/assign-tenant
+          return ok(res, data);
+        }
 
+        if (req.method === 'PATCH') {
+          if (!isSystemAdmin && !sharedSecretUsed) {
+            return badRequest(res, 'system_admin_required');
+          }
+          const raw = await parseBody(req);
+          const body = normalizePayload(raw);
+          const id = String(body?.id || '').trim();
+          if (!id) return badRequest(res, 'missing_id');
+          const updates = {};
+          if (body.display_name !== undefined) updates.display_name = body.display_name;
+          if (body.logo_url !== undefined) updates.logo_url = body.logo_url;
+          if (body.status !== undefined) updates.status = body.status;
+          const { data, error } = await supabase
+            .from('tenants')
+            .update(updates)
+            .eq('id', id)
+            .select('*')
+            .single();
+          if (error) return badRequest(res, error.message);
           return ok(res, data);
         }
 
         if (req.method === 'GET') {
-          // Only system admin (no tenant) or shared secret can list all tenants
-          if (!sharedSecretUsed && adminTenantId) {
+          if (!sharedSecretUsed && !isSystemAdmin) {
             return badRequest(res, 'system_admin_required');
           }
           const { data, error } = await supabase
@@ -294,6 +319,9 @@ export default async function handler(req, res) {
       if (idMaybe === 'assign-tenant') {
         if (req.method !== 'POST') return notFound(res);
         if (!adminUserId) return unauthorized(res);
+        if (!isSystemAdmin && !sharedSecretUsed) {
+          return badRequest(res, 'system_admin_required');
+        }
         const raw = await parseBody(req);
         const body = normalizePayload(raw);
         const targetTenantId = String(body?.tenant_id || '').trim();
