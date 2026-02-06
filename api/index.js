@@ -355,14 +355,17 @@ export default async function handler(req, res) {
   // Admin endpoints (e.g., POST/GET/DELETE /api/admin/users)
   if (resource === 'admin' && idMaybe === 'users') {
     let adminTenantId = null;
+    let isSystemAdmin = false;
     const authHeader = req.headers['authorization'] || '';
     const bearerToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
     if (API_SHARED_SECRET && bearerToken === API_SHARED_SECRET) {
       // Shared-secret: no tenant filter (list/create all)
+      isSystemAdmin = true;
     } else {
       const authz = await authenticateAdmin(req);
       if (!authz.ok) return unauthorized(res);
       adminTenantId = authz.tenantId || null;
+      isSystemAdmin = !!authz.isSystemAdmin;
     }
 
     if (req.method === 'POST') {
@@ -373,6 +376,7 @@ export default async function handler(req, res) {
         const password = String(body?.password || '');
         const fullName = body?.full_name ? String(body.full_name) : undefined;
         const role = String(body?.role || '').toLowerCase();
+        const explicitTenantId = body?.tenant_id ? String(body.tenant_id) : null;
 
         if (!email) return badRequest(res, 'missing_email');
         if (!password || password.length < 8) return badRequest(res, 'invalid_password_min_8_chars');
@@ -381,7 +385,13 @@ export default async function handler(req, res) {
         if (!roleValid) return badRequest(res, 'invalid_role');
 
         const userMeta = { full_name: fullName, role: role || 'operator' };
-        if (adminTenantId) userMeta.tenant_id = adminTenantId;
+        // Superadmin: nunca auto-vincula; usa tenant_id se fornecido
+        if (isSystemAdmin) {
+          if (explicitTenantId) userMeta.tenant_id = explicitTenantId;
+        } else if (adminTenantId) {
+          // Admin comum: sempre vincula ao próprio tenant
+          userMeta.tenant_id = adminTenantId;
+        }
 
         const { data: created, error: createErr } = await supabase.auth.admin.createUser({
           email,
@@ -399,7 +409,11 @@ export default async function handler(req, res) {
           full_name: fullName || null,
           role: (roleValid && role) ? role : 'operator',
         };
-        if (adminTenantId) profilePayload.tenant_id = adminTenantId;
+        if (isSystemAdmin) {
+          if (explicitTenantId) profilePayload.tenant_id = explicitTenantId;
+        } else if (adminTenantId) {
+          profilePayload.tenant_id = adminTenantId;
+        }
 
         const { error: upsertErr } = await supabase
           .from('profiles')
@@ -499,6 +513,30 @@ export default async function handler(req, res) {
         .upsert({ user_id: userId, tenant_id: targetTenantId }, { onConflict: 'user_id' });
       if (upErr) return badRequest(res, upErr.message);
       return ok(res, { assigned: true, user_id: userId, tenant_id: targetTenantId });
+    } catch (e) {
+      cors(res);
+      res.statusCode = 500;
+      res.setHeader('Content-Type', 'application/json');
+      return res.end(JSON.stringify({ error: 'internal_error', message: e?.message || String(e) }));
+    }
+  }
+
+  // Superadmin: get current user's profile via backend (fallback when client fails)
+  if (resource === 'admin' && idMaybe === 'profile') {
+    try {
+      const authHeader = req.headers['authorization'] || '';
+      const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+      if (!token) return unauthorized(res);
+      const { data: userData, error: userErr } = await supabase.auth.getUser(token);
+      if (userErr || !userData?.user?.id) return unauthorized(res);
+      const userId = userData.user.id;
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, user_id, full_name, role, tenant_id, tenant:tenants(name)')
+        .eq('user_id', userId)
+        .maybeSingle();
+      if (error) return badRequest(res, error.message);
+      return ok(res, data || {});
     } catch (e) {
       cors(res);
       res.statusCode = 500;

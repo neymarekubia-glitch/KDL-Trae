@@ -147,6 +147,22 @@ export function AuthProvider({ children }) {
         
       if (error) {
         console.warn('[Auth] Erro ao carregar perfil:', error.message);
+        // Fallback via backend com service role
+        try {
+          const { data: sessionData } = await supabase.auth.getSession();
+          const token = sessionData?.session?.access_token;
+          if (token) {
+            const res = await fetch('/api/admin/profile', {
+              method: 'GET',
+              headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) {
+              const json = await res.json().catch(() => undefined);
+              setProfile(json || undefined);
+              return;
+            }
+          }
+        } catch (_) {}
         setProfile(undefined);
         return;
       }

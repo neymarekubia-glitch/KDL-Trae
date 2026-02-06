@@ -18,8 +18,8 @@ const AUTH_HEADER = import.meta.env.VITE_API_AUTH_HEADER;
 const AUTH_VALUE = import.meta.env.VITE_API_AUTH_VALUE;
 const TOKEN = import.meta.env.VITE_API_TOKEN;
 
-// Client-side request timeout (ms) - timeout otimizado
-const REQUEST_TIMEOUT_MS = Number(import.meta.env.VITE_API_REQUEST_TIMEOUT_MS || 30000);
+// Client-side request timeout (ms) - otimizado para responsividade
+const REQUEST_TIMEOUT_MS = Number(import.meta.env.VITE_API_REQUEST_TIMEOUT_MS || 8000);
 
 function withTimeout(fetchPromise, timeoutMs) {
   const controller = new AbortController();

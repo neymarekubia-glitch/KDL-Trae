@@ -15,6 +15,7 @@ export default function SuperAdmin() {
   const [unassignedUsers, setUnassignedUsers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [creatingUser, setCreatingUser] = useState(false);
 
   const headers = useMemo(() => {
     const bearer = token || import.meta.env.VITE_API_TOKEN || '';
@@ -118,6 +119,36 @@ export default function SuperAdmin() {
     }
   }
 
+  async function onCreateUser(e) {
+    e.preventDefault();
+    setCreatingUser(true);
+    setError('');
+    const formEl = e.currentTarget;
+    const form = new FormData(formEl);
+    const email = String(form.get('email') || '').trim().toLowerCase();
+    const password = String(form.get('password') || '').trim();
+    const full_name = String(form.get('full_name') || '').trim();
+    const role = String(form.get('role') || 'operator').trim().toLowerCase();
+    const tenant_id = String(form.get('tenant_id') || '').trim();
+    if (!email || !password) {
+      setError('Informe e-mail e senha (mínimo 8 caracteres)');
+      setCreatingUser(false);
+      return;
+    }
+    try {
+      await apiClient.request('POST', '/admin/users', {
+        headers,
+        body: { email, password, full_name, role, tenant_id: tenant_id || undefined },
+      });
+      formEl?.reset?.();
+      await selectTenant(selectedTenantId || tenant_id);
+    } catch (e) {
+      setError(e?.message || 'Falha ao criar usuário');
+    } finally {
+      setCreatingUser(false);
+    }
+  }
+
   if (!isSuperAdmin) {
     return (
       <div className="p-8">
@@ -203,6 +234,28 @@ export default function SuperAdmin() {
                   {!unassignedUsers.length && (
                     <div className="text-sm text-gray-500">Nenhum usuário disponível sem oficina</div>
                   )}
+                </div>
+                <div className="mt-6">
+                  <h3 className="font-semibold mb-2">Criar novo usuário</h3>
+                  <form onSubmit={onCreateUser} className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <Input name="full_name" placeholder="Nome completo" />
+                    <Input name="email" type="email" placeholder="E-mail" required />
+                    <Input name="password" type="password" placeholder="Senha (mín. 8)" required />
+                    <select name="role" className="border rounded p-2">
+                      <option value="operator">Operador</option>
+                      <option value="manager">Gerente</option>
+                      <option value="admin">Admin</option>
+                    </select>
+                    <select name="tenant_id" className="border rounded p-2" defaultValue={selectedTenantId}>
+                      <option value="">Sem oficina</option>
+                      {tenants.map((t) => (
+                        <option key={t.id} value={t.id}>{t.display_name || t.name}</option>
+                      ))}
+                    </select>
+                    <div className="md:col-span-2">
+                      <Button type="submit" disabled={creatingUser}>Criar Usuário</Button>
+                    </div>
+                  </form>
                 </div>
               </div>
             </div>
