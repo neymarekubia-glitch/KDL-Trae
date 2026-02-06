@@ -39,8 +39,8 @@ async function getProfileFromToken(bearerToken) {
     .select('tenant_id, role')
     .eq('user_id', userId)
     .maybeSingle();
-  if (profErr || !profile?.tenant_id) return null;
-  return { userId, tenantId: profile.tenant_id, role: profile.role };
+  if (profErr || !profile) return null;
+  return { userId, tenantId: profile?.tenant_id ?? null, role: profile.role };
 }
 
 /** Resolve tenant for request: JWT -> profile.tenant_id; shared secret -> no tenant (no filter). */
