@@ -650,7 +650,6 @@ export default async function handler(req, res) {
       return res.end(JSON.stringify({ error: 'internal_error', message: e?.message || String(e) }));
     }
   }
-<<<<<<< HEAD
   if (resource === 'ai' && idMaybe === 'diagnose') {
     try {
       const authz = await getAuthAndTenant(req);
@@ -874,8 +873,6 @@ export default async function handler(req, res) {
       return res.end(JSON.stringify({ error: 'internal_error', message: e?.message || String(e) }));
     }
   }
-=======
->>>>>>> e8d5fc794afdc5a2a2ab4cf0b7d98a4d43e80051
   // Superadmin: get current user's profile via backend (fallback when client fails)
   if (resource === 'admin' && idMaybe === 'profile') {
     try {
