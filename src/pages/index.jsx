@@ -23,7 +23,10 @@ import VehicleHistory from "./VehicleHistory";
 import VehicleSearch from "./VehicleSearch";
 
 import PendingPayments from "./PendingPayments";
+<<<<<<< HEAD
 import AIAssistant from "./AIAssistant.jsx";
+=======
+>>>>>>> e8d5fc794afdc5a2a2ab4cf0b7d98a4d43e80051
 
 import { BrowserRouter as Router, Route, Routes, useLocation, Navigate } from 'react-router-dom';
 import Login from './Login.jsx';
@@ -77,8 +80,11 @@ const PAGES = {
     
     PendingPayments: PendingPayments,
     
+<<<<<<< HEAD
     AIAssistant: AIAssistant,
     
+=======
+>>>>>>> e8d5fc794afdc5a2a2ab4cf0b7d98a4d43e80051
 }
 
 function _getCurrentPage(url) {
@@ -121,7 +127,10 @@ function PagesContent() {
                       <Route path="/VehicleHistory" element={<Protected pageName="VehicleHistory"><VehicleHistory /></Protected>} />
                       <Route path="/VehicleSearch" element={<Protected pageName="VehicleSearch"><VehicleSearch /></Protected>} />
                       <Route path="/PendingPayments" element={<Protected pageName="PendingPayments"><PendingPayments /></Protected>} />
+<<<<<<< HEAD
                       <Route path="/AIAssistant" element={<Protected pageName="Dashboard"><AIAssistant /></Protected>} />
+=======
+>>>>>>> e8d5fc794afdc5a2a2ab4cf0b7d98a4d43e80051
                       <Route path="/admin/users" element={<Protected pageName="AdminUsers"><AdminUsers /></Protected>} />
                       <Route path="/admin/super" element={<Protected pageName="Dashboard"><SuperAdmin /></Protected>} />
                     </Routes>

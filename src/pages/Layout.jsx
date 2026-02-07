@@ -12,7 +12,10 @@ import {
   Menu,
   X,
   Search,
+<<<<<<< HEAD
   Zap,
+=======
+>>>>>>> e8d5fc794afdc5a2a2ab4cf0b7d98a4d43e80051
   Wifi,
   WifiOff
 } from "lucide-react";
@@ -63,11 +66,14 @@ function buildNavigationItems(role, user) {
     icon: Wrench,
   },
   {
+<<<<<<< HEAD
     title: "Assistente IA",
     url: createPageUrl("AIAssistant"),
     icon: Zap,
   },
   {
+=======
+>>>>>>> e8d5fc794afdc5a2a2ab4cf0b7d98a4d43e80051
     title: "Fornecedores",
     url: createPageUrl("Suppliers"),
     icon: Users,

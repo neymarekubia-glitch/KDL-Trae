@@ -5,10 +5,16 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+<<<<<<< HEAD
 import { Search, Car, User, Calendar, Gauge, DollarSign, Wrench, AlertCircle, Zap } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { apiClient } from "@/api/apiClient";
+=======
+import { Search, Car, User, Calendar, Gauge, DollarSign, Wrench, AlertCircle } from "lucide-react";
+import { format } from "date-fns";
+import { ptBR } from "date-fns/locale";
+>>>>>>> e8d5fc794afdc5a2a2ab4cf0b7d98a4d43e80051
 
 export default function VehicleSearch() {
   const [licensePlate, setLicensePlate] = useState("");
@@ -18,8 +24,11 @@ export default function VehicleSearch() {
   const [mileageHistory, setMileageHistory] = useState([]); // New state for mileage history
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
+<<<<<<< HEAD
   const [adviceLoading, setAdviceLoading] = useState(false);
   const [advice, setAdvice] = useState(null);
+=======
+>>>>>>> e8d5fc794afdc5a2a2ab4cf0b7d98a4d43e80051
 
   const handleSearch = async (e) => {
     e.preventDefault();
@@ -64,6 +73,7 @@ export default function VehicleSearch() {
       setLoading(false);
     }
   };
+<<<<<<< HEAD
   
   const handleAdvice = async () => {
     if (!vehicle?.id || adviceLoading) return;
@@ -77,6 +87,8 @@ export default function VehicleSearch() {
       setAdviceLoading(false);
     }
   };
+=======
+>>>>>>> e8d5fc794afdc5a2a2ab4cf0b7d98a4d43e80051
 
   const getStatusBadge = (status) => {
     const colors = {
@@ -181,6 +193,7 @@ export default function VehicleSearch() {
                       {vehicle.current_mileage?.toLocaleString()} km
                     </p>
                   </div>
+<<<<<<< HEAD
                   <div className="pt-2">
                     <Button
                       onClick={handleAdvice}
@@ -191,6 +204,8 @@ export default function VehicleSearch() {
                       {adviceLoading ? "Gerando conselho..." : "Conselho IA de revisão"}
                     </Button>
                   </div>
+=======
+>>>>>>> e8d5fc794afdc5a2a2ab4cf0b7d98a4d43e80051
                 </CardContent>
               </Card>
 
@@ -292,6 +307,7 @@ export default function VehicleSearch() {
                 </CardContent>
               </Card>
             )}
+<<<<<<< HEAD
             
             {advice && (
               <Card className="shadow-lg border-0">
@@ -323,6 +339,8 @@ export default function VehicleSearch() {
                 </CardContent>
               </Card>
             )}
+=======
+>>>>>>> e8d5fc794afdc5a2a2ab4cf0b7d98a4d43e80051
 
             <Card className="shadow-lg border-0">
               <CardHeader className="border-b bg-gradient-to-r from-blue-50 to-blue-100/50">
