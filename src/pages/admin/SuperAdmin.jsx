@@ -4,6 +4,14 @@ import { apiClient } from '@/api/apiClient.js';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { Coins } from 'lucide-react';
+
+const PLANOS = [
+  { label: 'Básico (50 créditos/mês)', value: 50 },
+  { label: 'Profissional (200 créditos/mês)', value: 200 },
+  { label: 'Avançado (500 créditos/mês)', value: 500 },
+  { label: 'Ilimitado (2.000 créditos/mês)', value: 2000 },
+];
 
 export default function SuperAdmin() {
   const { user, role, token } = useAuth();
@@ -81,6 +89,22 @@ export default function SuperAdmin() {
       await loadTenants();
     } catch (e) {
       setError(e?.message || 'Falha ao criar oficina');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function onSavePlan(tenantId, ai_credits_limit) {
+    setLoading(true);
+    setError('');
+    try {
+      await apiClient.request('PATCH', '/admin/tenants', {
+        body: { id: tenantId, ai_credits_limit },
+        headers,
+      });
+      await loadTenants();
+    } catch (e) {
+      setError(e?.message || 'Falha ao atualizar plano');
     } finally {
       setLoading(false);
     }
@@ -269,6 +293,50 @@ export default function SuperAdmin() {
           {selectedTenantId && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
+                <div className="mb-6 p-4 rounded-lg border bg-amber-50/50 border-amber-200">
+                  <h3 className="font-semibold mb-3 flex items-center gap-2">
+                    <Coins className="w-4 h-4 text-amber-600" />
+                    Plano de créditos IA
+                  </h3>
+                  {(() => {
+                    const t = tenants.find((x) => x.id === selectedTenantId);
+                    const used = t?.ai_credits_used_this_month ?? 0;
+                    const limit = t?.ai_credits_limit ?? 50;
+                    const restantes = Math.max(0, limit - used);
+                    return (
+                      <div className="space-y-3">
+                        <div className="text-sm text-gray-700">
+                          <span className="font-medium">Usados este mês:</span> {used} / {limit}
+                          <span className="text-gray-500 ml-2">(restantes: {restantes})</span>
+                        </div>
+                        <div className="flex gap-2 flex-wrap items-center">
+                          <select
+                            id="plan-select"
+                            defaultValue={limit}
+                            className="border rounded p-2 text-sm"
+                          >
+                            {PLANOS.map((p) => (
+                              <option key={p.value} value={p.value}>
+                                {p.label}
+                              </option>
+                            ))}
+                          </select>
+                          <Button
+                            size="sm"
+                            onClick={() => {
+                              const sel = document.getElementById('plan-select');
+                              const v = Number(sel?.value);
+                              if (Number.isFinite(v)) onSavePlan(selectedTenantId, v);
+                            }}
+                            disabled={loading}
+                          >
+                            Salvar plano
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
                 <h3 className="font-semibold mb-2">Usuários desta oficina</h3>
                 <div className="space-y-2">
                   {tenantUsers.map((u) => (

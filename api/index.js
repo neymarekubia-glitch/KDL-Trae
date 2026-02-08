@@ -291,6 +291,10 @@ export default async function handler(req, res) {
           if (body.display_name !== undefined) updates.display_name = body.display_name;
           if (body.logo_url !== undefined) updates.logo_url = body.logo_url;
           if (body.status !== undefined) updates.status = body.status;
+          if (body.ai_credits_limit !== undefined) {
+            const n = Number(body.ai_credits_limit);
+            updates.ai_credits_limit = Number.isFinite(n) && n >= 0 ? n : 50;
+          }
           const { data, error } = await supabase
             .from('tenants')
             .update(updates)
@@ -672,6 +676,47 @@ export default async function handler(req, res) {
       res.setHeader('Content-Type', 'application/json');
       return res.end(JSON.stringify({ error: 'internal_error', message: e?.message || String(e) }));
     }
+  }
+
+  // Assistente IA: GET /api/ai/credits (saldo do tenant)
+  if (resource === 'ai' && idMaybe === 'credits') {
+    if (req.method !== 'GET') return notFound(res);
+    if (!auth.authorized || !auth.tenantId) return unauthorized(res);
+    try {
+      const { data: row } = await supabase
+        .from('tenants')
+        .select('ai_credits_limit, ai_credits_used_this_month, ai_credits_reset_at')
+        .eq('id', auth.tenantId)
+        .maybeSingle();
+      let used = row?.ai_credits_used_this_month ?? 0;
+      let limit = row?.ai_credits_limit ?? null;
+      const resetAt = row?.ai_credits_reset_at ? new Date(row.ai_credits_reset_at) : null;
+      const now = new Date();
+      if (limit != null && resetAt && now >= resetAt) {
+        const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+        await supabase
+          .from('tenants')
+          .update({ ai_credits_used_this_month: 0, ai_credits_reset_at: nextMonth.toISOString() })
+          .eq('id', auth.tenantId);
+        used = 0;
+      }
+      cors(res);
+      res.statusCode = 200;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ credits_used_this_month: used, credits_limit: limit }));
+    } catch (e) {
+      cors(res);
+      res.statusCode = 200;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ credits_used_this_month: 0, credits_limit: null }));
+    }
+    return;
+  }
+
+  // Assistente IA: POST /api/ai/chat (requer autenticação e tenant)
+  if (resource === 'ai' && idMaybe === 'chat') {
+    const { handleAIChat } = await import('./lib/aiChat.js');
+    return handleAIChat(req, res, auth, supabase);
   }
 
   if (!table) return notFound(res);

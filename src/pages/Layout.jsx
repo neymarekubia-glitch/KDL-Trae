@@ -13,7 +13,8 @@ import {
   X,
   Search,
   Wifi,
-  WifiOff
+  WifiOff,
+  MessageSquare
 } from "lucide-react";
 import {
   Sidebar,
@@ -35,6 +36,11 @@ function buildNavigationItems(role, user) {
     title: "Dashboard",
     url: createPageUrl("Dashboard"),
     icon: LayoutDashboard,
+  },
+  {
+    title: "Assistente IA",
+    url: createPageUrl("Assistente"),
+    icon: MessageSquare,
   },
   {
     title: "Consulta de Placa",
