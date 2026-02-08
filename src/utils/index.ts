@@ -27,7 +27,7 @@ export function hasAccess(role: string | undefined, pageName: string): boolean {
         const allowed = [
             'dashboard', 'customers', 'vehicles', 'quotes', 'quotedetail',
             'serviceorders', 'vehiclehistory', 'vehiclesearch', 'reminders', 'pendingpayments',
-            'servicecatalog', 'suppliers', 'newquote', 'assistente'
+            'servicecatalog', 'suppliers', 'newquote'
         ];
         if (normalized === 'adminusers') return false; // admins only
         return allowed.includes(normalized);

@@ -674,12 +674,6 @@ export default async function handler(req, res) {
     }
   }
 
-  // Assistente IA: POST /api/ai/chat (requer autenticação e tenant)
-  if (resource === 'ai' && idMaybe === 'chat') {
-    const { handleAIChat } = await import('./lib/aiChat.js');
-    return handleAIChat(req, res, auth, supabase);
-  }
-
   if (!table) return notFound(res);
 
   const isTenantScoped = tenantScopedTables.has(table);

@@ -24,8 +24,6 @@ import VehicleSearch from "./VehicleSearch";
 
 import PendingPayments from "./PendingPayments";
 
-import Assistente from "./Assistente";
-
 import { BrowserRouter as Router, Route, Routes, useLocation, Navigate } from 'react-router-dom';
 import Login from './Login.jsx';
 import { useAuth } from '@/hooks/useAuth.jsx';
@@ -77,9 +75,7 @@ const PAGES = {
     VehicleSearch: VehicleSearch,
     
     PendingPayments: PendingPayments,
-
-    Assistente: Assistente,
-
+    
 }
 
 function _getCurrentPage(url) {
@@ -122,7 +118,6 @@ function PagesContent() {
                       <Route path="/VehicleHistory" element={<Protected pageName="VehicleHistory"><VehicleHistory /></Protected>} />
                       <Route path="/VehicleSearch" element={<Protected pageName="VehicleSearch"><VehicleSearch /></Protected>} />
                       <Route path="/PendingPayments" element={<Protected pageName="PendingPayments"><PendingPayments /></Protected>} />
-                      <Route path="/Assistente" element={<Protected pageName="Assistente"><Assistente /></Protected>} />
                       <Route path="/admin/users" element={<Protected pageName="AdminUsers"><AdminUsers /></Protected>} />
                       <Route path="/admin/super" element={<Protected pageName="Dashboard"><SuperAdmin /></Protected>} />
                     </Routes>
