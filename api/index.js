@@ -1381,21 +1381,53 @@ export default async function handler(req, res) {
         return ok(res, data || []);
       }
       const { column, ascending } = getSort(urlObj.searchParams);
-      let sortColumn = column;
-      if (table === 'tenants' && sortColumn === 'created_date') {
-        // tenants usa created_at em vez de created_date
-        sortColumn = 'created_at';
-      }
-      let query = supabase.from(table).select('*').order(sortColumn, { ascending });
-      if (isTenantScoped && tenantId) query = query.eq('tenant_id', tenantId);
-      if (table === 'tenants' && tenantId) query = query.eq('id', tenantId);
       const filters = getFilters(urlObj.searchParams);
-      for (const [key, value] of Object.entries(filters)) {
-        query = query.eq(key, value);
+      const candidates = [];
+      if (column) candidates.push(column);
+      // Fallbacks comuns de data de criação
+      candidates.push('created_at', 'created_date', 'createdAt', 'created');
+      // Para tenants, priorize created_at
+      if (table === 'tenants') {
+        candidates.unshift('created_at');
       }
-      const { data, error } = await query;
-      if (error) return badRequest(res, error.message);
-      return ok(res, data || []);
+      let finalData = null;
+      let lastErr = null;
+      for (const col of candidates) {
+        // Evitar col vazio/duplicado
+        if (!col) continue;
+        try {
+          let q = supabase.from(table).select('*');
+          if (isTenantScoped && tenantId) q = q.eq('tenant_id', tenantId);
+          if (table === 'tenants' && tenantId) q = q.eq('id', tenantId);
+          for (const [key, value] of Object.entries(filters)) {
+            q = q.eq(key, value);
+          }
+          // Tente ordenar por coluna candidata; se não existir, supabase retornará error
+          q = q.order(col, { ascending });
+          const { data, error } = await q;
+          if (!error) {
+            finalData = data || [];
+            lastErr = null;
+            break;
+          }
+          lastErr = error;
+        } catch (e) {
+          lastErr = e;
+        }
+      }
+      if (lastErr && finalData === null) {
+        // Como fallback final, sem ordenação
+        let q = supabase.from(table).select('*');
+        if (isTenantScoped && tenantId) q = q.eq('tenant_id', tenantId);
+        if (table === 'tenants' && tenantId) q = q.eq('id', tenantId);
+        for (const [key, value] of Object.entries(filters)) {
+          q = q.eq(key, value);
+        }
+        const { data, error } = await q;
+        if (error) return badRequest(res, error.message);
+        return ok(res, data || []);
+      }
+      return ok(res, finalData || []);
     }
 
     if (req.method === 'POST') {
