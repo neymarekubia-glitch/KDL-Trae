@@ -19,13 +19,13 @@ export default function AIAssistant() {
   const [fieldValues, setFieldValues] = useState({});
   const [lastActions, setLastActions] = useState([]);
 
-  const sendText = async (text) => {
+  const sendText = async (text, extraContext) => {
     if (!text.trim()) return;
     const nextMessages = [...messages, { role: "user", content: text.trim() }];
     setMessages(nextMessages);
     setSending(true);
     try {
-      const data = await apiClient.request("POST", "/ai/chat", { body: { messages: nextMessages } });
+      const data = await apiClient.request("POST", "/ai/chat", { body: { messages: nextMessages, context: extraContext || {} } });
       const reply = data.assistant_message || "Ok.";
       setMessages([...nextMessages, { role: "assistant", content: reply }]);
       setRequestedFields(Array.isArray(data.requested_fields) ? data.requested_fields : []);
@@ -47,7 +47,7 @@ export default function AIAssistant() {
   const submitRequestedFields = async () => {
     const parts = Object.entries(fieldValues).map(([k, v]) => `${k}: ${v}`);
     const text = `Dados solicitados -> ${parts.join(", ")}`;
-    await sendText(text);
+    await sendText(text, { provided_fields: fieldValues });
   };
 
   return (

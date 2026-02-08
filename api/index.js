@@ -264,7 +264,11 @@ export default async function handler(req, res) {
           'Tipos de ação: "create_customer", "create_vehicle", "add_supplier", "add_service_item", "search_plate", "diagnose_quote", "update_vehicle_mileage".',
           'Só peça requested_fields quando faltarem dados.',
           'Quando possível, infira do texto: nome do cliente, placa, marca, modelo, ano, km.',
-          'Para diagnose_quote, inclua "problem_description" e um identificador do veículo (vehicle_id ou license_plate).'
+          'Para diagnose_quote, inclua "problem_description" e um identificador do veículo (vehicle_id ou license_plate).',
+          'Exemplos de saída:',
+          '{"assistant_message":"Vamos cadastrar seu cliente.","requested_fields":[{"key":"name","label":"Nome do cliente","type":"text"},{"key":"phone","label":"Telefone","type":"text"}],"actions":[{"type":"create_customer","params":{}}]}',
+          '{"assistant_message":"Vou consultar a placa.","requested_fields":[],"actions":[{"type":"search_plate","params":{"license_plate":"DZZ-1A16"}}]}',
+          '{"assistant_message":"Gerando diagnóstico e cotação.","requested_fields":[],"actions":[{"type":"diagnose_quote","params":{"license_plate":"ABC-1D23","problem_description":"Carro engasgando na partida"}}]}'
         ].join('\n');
         const resp = await fetch('https://api.openai.com/v1/chat/completions', {
           method: 'POST',
@@ -272,7 +276,8 @@ export default async function handler(req, res) {
           body: JSON.stringify({
             model,
             messages: [{ role: 'system', content: sys }, ...messages],
-            temperature: 0.2
+            temperature: 0.2,
+            response_format: { type: 'json_object' }
           })
         });
         const json = await resp.json();
@@ -284,28 +289,72 @@ export default async function handler(req, res) {
         }
       }
       if (!plan) {
-        return ok(res, { assistant_message: 'Não consegui interpretar. Descreva novamente com mais detalhes.', requested_fields: [], actions_performed: [] });
+        const lastUser = [...messages].reverse().find(m => m.role === 'user')?.content || '';
+        const text = String(lastUser).toLowerCase();
+        const performed = [];
+        const requested_fields = [];
+        const actions = [];
+        const plateMatch = lastUser.match(/[A-Z]{3}-?[0-9][A-Z][0-9]{2}|[A-Z]{3}-[0-9]{4}|[A-Z]{3}[0-9]{4}/i);
+        const plate = plateMatch ? plateMatch[0].toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/^([A-Z]{3})([0-9][A-Z][0-9]{2}|[0-9]{4})$/, (m, a, b) => `${a}-${b}`) : null;
+        const hasCadastrar = /cadastr/i.test(text);
+        const hasCliente = /cliente/i.test(text);
+        const hasVeiculo = /ve[ií]culo|carro/i.test(text);
+        const hasFornecedor = /fornecedor/i.test(text);
+        const hasProduto = /produto|pe[cç]a|servi[cç]o/i.test(text);
+        const wantsConsultaPlaca = /consultar.*placa|placa\s*[A-Z]/i.test(lastUser);
+        const problem = /engasga|engasg|barulho|n[aã]o liga|falhando|vazando|trepida|desalinhado|puxando/i.test(text);
+        if (hasCadastrar && hasCliente) {
+          actions.push({ type: 'create_customer', params: {} });
+          requested_fields.push({ key: 'name', label: 'Nome do cliente', type: 'text' });
+          requested_fields.push({ key: 'phone', label: 'Telefone (opcional)', type: 'text' });
+        } else if (hasCadastrar && hasVeiculo) {
+          actions.push({ type: 'create_vehicle', params: {} });
+          requested_fields.push({ key: 'license_plate', label: 'Placa do veículo', type: 'text' });
+          requested_fields.push({ key: 'brand', label: 'Marca', type: 'text' });
+          requested_fields.push({ key: 'model', label: 'Modelo', type: 'text' });
+          requested_fields.push({ key: 'year', label: 'Ano', type: 'number' });
+          requested_fields.push({ key: 'current_mileage', label: 'KM atual', type: 'number' });
+        } else if (hasFornecedor) {
+          actions.push({ type: 'add_supplier', params: {} });
+          requested_fields.push({ key: 'name', label: 'Nome do fornecedor', type: 'text' });
+          requested_fields.push({ key: 'phone', label: 'Telefone (opcional)', type: 'text' });
+          requested_fields.push({ key: 'email', label: 'Email (opcional)', type: 'text' });
+        } else if (hasProduto) {
+          actions.push({ type: 'add_service_item', params: {} });
+          requested_fields.push({ key: 'name', label: 'Nome do item', type: 'text' });
+          requested_fields.push({ key: 'type', label: 'Tipo (servico|peca|produto)', type: 'text' });
+          requested_fields.push({ key: 'sale_price', label: 'Preço de venda', type: 'number' });
+          requested_fields.push({ key: 'cost_price', label: 'Preço de custo', type: 'number' });
+        } else if (wantsConsultaPlaca || plate) {
+          actions.push({ type: 'search_plate', params: { license_plate: plate || '' } });
+          if (!plate) requested_fields.push({ key: 'license_plate', label: 'Placa do veículo', type: 'text' });
+        } else if (problem) {
+          actions.push({ type: 'diagnose_quote', params: { license_plate: plate || '', problem_description: lastUser } });
+          if (!plate) requested_fields.push({ key: 'license_plate', label: 'Placa do veículo', type: 'text' });
+        }
+        plan = { assistant_message: 'Ok, preciso de alguns dados para continuar.', requested_fields, actions };
       }
       const actions = Array.isArray(plan.actions) ? plan.actions : [];
       const performed = [];
       const idMap = {};
+      const provided = context?.provided_fields || {};
       for (const action of actions) {
         const type = String(action?.type || '');
-        const p = action?.params || {};
+        const p = { ...(action?.params || {}) };
         if (type === 'create_customer') {
-          const name = String(p?.name || '').trim();
-          const phone = String(p?.phone || '').trim() || null;
+          const name = String(p?.name || provided?.name || '').trim();
+          const phone = String(p?.phone || provided?.phone || '').trim() || null;
           if (!name) continue;
           const { data, error } = await supabase.from('customers').insert({ name, phone, tenant_id: tenantId }).select('*').single();
           if (error) continue;
           performed.push({ type, id: data.id, name: data.name });
           idMap.customer_id = data.id;
         } else if (type === 'create_vehicle') {
-          const brand = String(p?.brand || '').trim();
-          const modelName = String(p?.model || '').trim();
-          const licensePlate = String(p?.license_plate || '').trim();
-          const year = p?.year ? Number(p.year) : null;
-          const currentMileage = p?.current_mileage ? Number(p.current_mileage) : 0;
+          const brand = String(p?.brand || provided?.brand || '').trim();
+          const modelName = String(p?.model || provided?.model || '').trim();
+          const licensePlate = String(p?.license_plate || provided?.license_plate || '').trim();
+          const year = p?.year ? Number(p.year) : (provided?.year ? Number(provided.year) : null);
+          const currentMileage = p?.current_mileage ? Number(p.current_mileage) : (provided?.current_mileage ? Number(provided.current_mileage) : 0);
           let customerId = p?.customer_id || idMap.customer_id || context?.customer_id || null;
           if (!brand || !modelName || !licensePlate) continue;
           const { data, error } = await supabase
@@ -317,22 +366,22 @@ export default async function handler(req, res) {
           performed.push({ type, id: data.id, license_plate: data.license_plate });
           idMap.vehicle_id = data.id;
         } else if (type === 'add_supplier') {
-          const name = String(p?.name || '').trim();
+          const name = String(p?.name || provided?.name || '').trim();
           if (!name) continue;
-          const phone = String(p?.phone || '').trim() || null;
-          const email = String(p?.email || '').trim() || null;
+          const phone = String(p?.phone || provided?.phone || '').trim() || null;
+          const email = String(p?.email || provided?.email || '').trim() || null;
           const { data, error } = await supabase.from('suppliers').insert({ name, phone, email, tenant_id: tenantId }).select('*').single();
           if (error) continue;
           performed.push({ type, id: data.id, name: data.name });
         } else if (type === 'add_service_item') {
-          const name = String(p?.name || '').trim();
-          const itemType = String(p?.type || '').trim() || 'servico';
+          const name = String(p?.name || provided?.name || '').trim();
+          const itemType = String(p?.type || provided?.type || '').trim() || 'servico';
           if (!name) continue;
-          const salePrice = Number(p?.sale_price || 0);
-          const costPrice = Number(p?.cost_price || 0);
-          const warrantyDays = Number(p?.default_warranty_days || 0);
-          const replDays = Number(p?.replacement_period_days || 0);
-          const replKm = Number(p?.replacement_mileage || 0);
+          const salePrice = Number(p?.sale_price ?? provided?.sale_price ?? 0);
+          const costPrice = Number(p?.cost_price ?? provided?.cost_price ?? 0);
+          const warrantyDays = Number(p?.default_warranty_days ?? provided?.default_warranty_days ?? 0);
+          const replDays = Number(p?.replacement_period_days ?? provided?.replacement_period_days ?? 0);
+          const replKm = Number(p?.replacement_mileage ?? provided?.replacement_mileage ?? 0);
           const { data, error } = await supabase
             .from('service_items')
             .insert({
@@ -350,7 +399,7 @@ export default async function handler(req, res) {
           if (error) continue;
           performed.push({ type, id: data.id, name: data.name });
         } else if (type === 'search_plate') {
-          const licensePlate = String(p?.license_plate || '').trim();
+          const licensePlate = String(p?.license_plate || provided?.license_plate || '').trim();
           if (!licensePlate) continue;
           const { data: vehicle } = await supabase.from('vehicles').select('*').eq('license_plate', licensePlate).eq('tenant_id', tenantId).maybeSingle();
           if (vehicle) {
@@ -363,7 +412,7 @@ export default async function handler(req, res) {
           }
         } else if (type === 'update_vehicle_mileage') {
           const vehicleId = p?.vehicle_id || idMap.vehicle_id || null;
-          const mileage = Number(p?.mileage || 0);
+          const mileage = Number(p?.mileage ?? provided?.mileage ?? 0);
           if (!vehicleId || !mileage) continue;
           await supabase.from('vehicle_mileage_history').insert({ vehicle_id: vehicleId, mileage, tenant_id: tenantId });
           await supabase.from('vehicles').update({ current_mileage: mileage }).eq('id', vehicleId).eq('tenant_id', tenantId);
@@ -371,8 +420,8 @@ export default async function handler(req, res) {
         } else if (type === 'diagnose_quote') {
           let vehicleId = p?.vehicle_id || idMap.vehicle_id || null;
           let customerId = p?.customer_id || idMap.customer_id || context?.customer_id || null;
-          const licensePlate = String(p?.license_plate || '').trim();
-          const problemDescription = String(p?.problem_description || '').trim();
+          const licensePlate = String(p?.license_plate || provided?.license_plate || '').trim();
+          const problemDescription = String(p?.problem_description || provided?.problem_description || lastUser || '').trim();
           if (!vehicleId && licensePlate) {
             const { data: vehicleFound } = await supabase.from('vehicles').select('id,customer_id').eq('license_plate', licensePlate).eq('tenant_id', tenantId).maybeSingle();
             if (vehicleFound) {
