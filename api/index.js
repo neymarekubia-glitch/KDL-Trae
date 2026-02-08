@@ -241,6 +241,296 @@ export default async function handler(req, res) {
       return res.end(JSON.stringify({ error: 'internal_error', message: e?.message || String(e) }));
     }
   }
+  if (resource === 'ai' && idMaybe === 'chat') {
+    try {
+      const authz = await getAuthAndTenant(req);
+      if (!authz.authorized) return unauthorized(res);
+      const tenantId = authz.tenantId || null;
+      if (!tenantId) return badRequest(res, 'tenant_required');
+      if (req.method !== 'POST') return notFound(res);
+      const raw = await parseBody(req);
+      const body = normalizePayload(raw);
+      const messages = Array.isArray(body?.messages) ? body.messages : [];
+      const context = body?.context || {};
+      if (!messages.length) return badRequest(res, 'missing_messages');
+      const apiKey = process.env.OPENAI_API_KEY;
+      const model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+      let plan = null;
+      if (apiKey) {
+        const sys = [
+          'Você é um agente para oficinas mecânicas.',
+          'Receba mensagens do usuário e produza um JSON com campos:',
+          '{ "assistant_message": string, "requested_fields": [{ key, label, type }], "actions": [{ "type": string, "params": object }] }',
+          'Tipos de ação: "create_customer", "create_vehicle", "add_supplier", "add_service_item", "search_plate", "diagnose_quote", "update_vehicle_mileage".',
+          'Só peça requested_fields quando faltarem dados.',
+          'Quando possível, infira do texto: nome do cliente, placa, marca, modelo, ano, km.',
+          'Para diagnose_quote, inclua "problem_description" e um identificador do veículo (vehicle_id ou license_plate).'
+        ].join('\n');
+        const resp = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model,
+            messages: [{ role: 'system', content: sys }, ...messages],
+            temperature: 0.2
+          })
+        });
+        const json = await resp.json();
+        const content = json?.choices?.[0]?.message?.content || '';
+        try {
+          plan = JSON.parse(content);
+        } catch {
+          plan = null;
+        }
+      }
+      if (!plan) {
+        return ok(res, { assistant_message: 'Não consegui interpretar. Descreva novamente com mais detalhes.', requested_fields: [], actions_performed: [] });
+      }
+      const actions = Array.isArray(plan.actions) ? plan.actions : [];
+      const performed = [];
+      const idMap = {};
+      for (const action of actions) {
+        const type = String(action?.type || '');
+        const p = action?.params || {};
+        if (type === 'create_customer') {
+          const name = String(p?.name || '').trim();
+          const phone = String(p?.phone || '').trim() || null;
+          if (!name) continue;
+          const { data, error } = await supabase.from('customers').insert({ name, phone, tenant_id: tenantId }).select('*').single();
+          if (error) continue;
+          performed.push({ type, id: data.id, name: data.name });
+          idMap.customer_id = data.id;
+        } else if (type === 'create_vehicle') {
+          const brand = String(p?.brand || '').trim();
+          const modelName = String(p?.model || '').trim();
+          const licensePlate = String(p?.license_plate || '').trim();
+          const year = p?.year ? Number(p.year) : null;
+          const currentMileage = p?.current_mileage ? Number(p.current_mileage) : 0;
+          let customerId = p?.customer_id || idMap.customer_id || context?.customer_id || null;
+          if (!brand || !modelName || !licensePlate) continue;
+          const { data, error } = await supabase
+            .from('vehicles')
+            .insert({ brand, model: modelName, year, license_plate: licensePlate, current_mileage: currentMileage, customer_id: customerId, tenant_id: tenantId })
+            .select('*')
+            .single();
+          if (error) continue;
+          performed.push({ type, id: data.id, license_plate: data.license_plate });
+          idMap.vehicle_id = data.id;
+        } else if (type === 'add_supplier') {
+          const name = String(p?.name || '').trim();
+          if (!name) continue;
+          const phone = String(p?.phone || '').trim() || null;
+          const email = String(p?.email || '').trim() || null;
+          const { data, error } = await supabase.from('suppliers').insert({ name, phone, email, tenant_id: tenantId }).select('*').single();
+          if (error) continue;
+          performed.push({ type, id: data.id, name: data.name });
+        } else if (type === 'add_service_item') {
+          const name = String(p?.name || '').trim();
+          const itemType = String(p?.type || '').trim() || 'servico';
+          if (!name) continue;
+          const salePrice = Number(p?.sale_price || 0);
+          const costPrice = Number(p?.cost_price || 0);
+          const warrantyDays = Number(p?.default_warranty_days || 0);
+          const replDays = Number(p?.replacement_period_days || 0);
+          const replKm = Number(p?.replacement_mileage || 0);
+          const { data, error } = await supabase
+            .from('service_items')
+            .insert({
+              name,
+              type: itemType,
+              sale_price: salePrice,
+              cost_price: costPrice,
+              default_warranty_days: warrantyDays,
+              replacement_period_days: replDays,
+              replacement_mileage: replKm,
+              tenant_id: tenantId
+            })
+            .select('*')
+            .single();
+          if (error) continue;
+          performed.push({ type, id: data.id, name: data.name });
+        } else if (type === 'search_plate') {
+          const licensePlate = String(p?.license_plate || '').trim();
+          if (!licensePlate) continue;
+          const { data: vehicle } = await supabase.from('vehicles').select('*').eq('license_plate', licensePlate).eq('tenant_id', tenantId).maybeSingle();
+          if (vehicle) {
+            const { data: quotesForVehicle } = await supabase.from('quotes').select('id,quote_number,status,vehicle_mileage').eq('vehicle_id', vehicle.id).eq('tenant_id', tenantId);
+            performed.push({ type, vehicle, quotes: quotesForVehicle || [] });
+            idMap.vehicle_id = vehicle.id;
+            idMap.customer_id = vehicle.customer_id;
+          } else {
+            performed.push({ type, vehicle: null });
+          }
+        } else if (type === 'update_vehicle_mileage') {
+          const vehicleId = p?.vehicle_id || idMap.vehicle_id || null;
+          const mileage = Number(p?.mileage || 0);
+          if (!vehicleId || !mileage) continue;
+          await supabase.from('vehicle_mileage_history').insert({ vehicle_id: vehicleId, mileage, tenant_id: tenantId });
+          await supabase.from('vehicles').update({ current_mileage: mileage }).eq('id', vehicleId).eq('tenant_id', tenantId);
+          performed.push({ type, vehicle_id: vehicleId, mileage });
+        } else if (type === 'diagnose_quote') {
+          let vehicleId = p?.vehicle_id || idMap.vehicle_id || null;
+          let customerId = p?.customer_id || idMap.customer_id || context?.customer_id || null;
+          const licensePlate = String(p?.license_plate || '').trim();
+          const problemDescription = String(p?.problem_description || '').trim();
+          if (!vehicleId && licensePlate) {
+            const { data: vehicleFound } = await supabase.from('vehicles').select('id,customer_id').eq('license_plate', licensePlate).eq('tenant_id', tenantId).maybeSingle();
+            if (vehicleFound) {
+              vehicleId = vehicleFound.id;
+              customerId = customerId || vehicleFound.customer_id;
+            }
+          }
+          if (!customerId || !vehicleId || !problemDescription) {
+            performed.push({ type, error: 'missing_fields', missing: { customer_id: !customerId, vehicle_id: !vehicleId, problem_description: !problemDescription } });
+            continue;
+          }
+          const { data: customer } = await supabase.from('customers').select('id,name,phone').eq('id', customerId).eq('tenant_id', tenantId).maybeSingle();
+          const { data: vehicle } = await supabase.from('vehicles').select('id,brand,model,year,license_plate,current_mileage').eq('id', vehicleId).eq('tenant_id', tenantId).maybeSingle();
+          if (!customer || !vehicle) {
+            performed.push({ type, error: 'customer_or_vehicle_not_found' });
+            continue;
+          }
+          const { data: catalog } = await supabase.from('service_items').select('id,name,type,sale_price,cost_price,default_warranty_days,replacement_period_days,replacement_mileage').eq('tenant_id', tenantId);
+          const { data: pastItems } = await supabase
+            .from('quote_items')
+            .select('service_item_name,service_item_type,quantity,unit_price,cost_price,created_date,quote_id')
+            .eq('tenant_id', tenantId)
+            .in('quote_id', (await supabase.from('quotes').select('id').eq('vehicle_id', vehicleId).eq('tenant_id', tenantId)).data?.map(q => q.id) || []);
+          let aiResult = null;
+          if (apiKey) {
+            const prompt = [
+              'Oficina mecânica. Gere diagnóstico e plano em JSON.',
+              `Cliente: ${customer.name}`,
+              `Veículo: ${vehicle.brand} ${vehicle.model} ${vehicle.year || ''} Placa ${vehicle.license_plate}`,
+              `KM: ${vehicle.current_mileage || 0}`,
+              `Problema relatado: ${problemDescription}`,
+              `Histórico: ${(pastItems || []).slice(0, 30).map(i => `${i.service_item_name}`).join('; ') || 'sem histórico'}`,
+              'Campos: diagnosis_summary, probable_causes[], labor_hours, recommended_services[].'
+            ].join('\n');
+            const resp = await fetch('https://api.openai.com/v1/chat/completions', {
+              method: 'POST',
+              headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                model,
+                messages: [{ role: 'system', content: 'Você é um assistente de oficina mecânica.' }, { role: 'user', content: prompt }],
+                temperature: 0.2
+              })
+            });
+            const json = await resp.json();
+            const content = json?.choices?.[0]?.message?.content || '';
+            try {
+              aiResult = JSON.parse(content);
+            } catch {
+              aiResult = null;
+            }
+          }
+          const recs = Array.isArray(aiResult?.recommended_services) ? aiResult.recommended_services : [];
+          const mappedItems = recs.map(r => {
+            const nameNorm = String(r.name || '').toLowerCase();
+            const found = (catalog || []).find(s => {
+              const sn = (s.name || '').toLowerCase();
+              return sn.includes(nameNorm) || nameNorm.includes(sn);
+            });
+            const type = r.type === 'peca' || r.type === 'produto' ? r.type : (r.type === 'servico' ? 'servico' : (found?.type || 'servico'));
+            const quantity = Number(r.quantity || 1);
+            const unitPrice = found ? Number(found.sale_price || 0) : Number(r.estimated_unit_price || 0);
+            const costPrice = found ? Number(found.cost_price || 0) : Number(r.estimated_cost_price || 0);
+            const warrantyDays = Number(r.warranty_days || found?.default_warranty_days || 0);
+            const replDays = Number(r.replacement_period_days || found?.replacement_period_days || 0);
+            const replKm = Number(r.replacement_mileage || found?.replacement_mileage || 0);
+            return {
+              service_item_id: found?.id || null,
+              service_item_name: found?.name || r.name || 'Item',
+              service_item_type: type,
+              quantity,
+              unit_price: unitPrice,
+              cost_price: costPrice,
+              total: unitPrice * quantity,
+              warranty_days: warrantyDays,
+              replacement_period_days: replDays,
+              replacement_mileage: replKm
+            };
+          });
+          const subtotal = mappedItems.reduce((sum, i) => sum + (Number(i.total) || 0), 0);
+          const discountPercent = 0;
+          const discountAmount = 0;
+          const total = subtotal - discountAmount;
+          const { data: quotesCountData } = await supabase.from('quotes').select('id').eq('tenant_id', tenantId);
+          const nextNumber = (quotesCountData || []).length + 1;
+          const quoteNumber = `COT-${String(nextNumber).padStart(6, '0')}`;
+          const { data: createdQuote, error: qErr } = await supabase
+            .from('quotes')
+            .insert({
+              customer_id: customerId,
+              vehicle_id: vehicleId,
+              quote_number: quoteNumber,
+              status: 'em_analise',
+              service_date: new Date().toISOString().split('T')[0],
+              vehicle_mileage: vehicle.current_mileage || 0,
+              subtotal,
+              total,
+              discount_percent: discountPercent,
+              discount_amount: discountAmount,
+              amount_paid: 0,
+              amount_pending: total,
+              payment_status: 'pendente',
+              service_duration_hours: Number(aiResult?.labor_hours || 0),
+              notes: aiResult?.diagnosis_summary || problemDescription,
+              tenant_id: tenantId
+            })
+            .select('*')
+            .single();
+          if (qErr) {
+            performed.push({ type, error: qErr.message });
+            continue;
+          }
+          for (const item of mappedItems) {
+            await supabase
+              .from('quote_items')
+              .insert({
+                quote_id: createdQuote.id,
+                service_item_id: item.service_item_id,
+                service_item_name: item.service_item_name,
+                service_item_type: item.service_item_type,
+                quantity: item.quantity,
+                unit_price: item.unit_price,
+                cost_price: item.cost_price,
+                total: item.total,
+                warranty_days: item.warranty_days,
+                tenant_id: tenantId
+              });
+            const nextServiceDate = item.replacement_period_days > 0 ? new Date(Date.now() + item.replacement_period_days * 24 * 3600 * 1000).toISOString().split('T')[0] : null;
+            const nextServiceMileage = item.replacement_mileage > 0 ? (vehicle.current_mileage || 0) + item.replacement_mileage : null;
+            if (nextServiceDate || nextServiceMileage) {
+              const message = `Lembrete: ${item.service_item_name} para ${customer.name} (${vehicle.brand} ${vehicle.model} ${vehicle.license_plate}).`;
+              await supabase
+                .from('maintenance_reminders')
+                .insert({
+                  customer_id: customerId,
+                  vehicle_id: vehicleId,
+                  quote_id: createdQuote.id,
+                  service_name: item.service_item_name,
+                  reminder_type: nextServiceDate && nextServiceMileage ? 'ambos' : (nextServiceDate ? 'tempo' : 'quilometragem'),
+                  target_date: nextServiceDate,
+                  target_mileage: nextServiceMileage,
+                  status: 'pendente',
+                  whatsapp_message: message,
+                  customer_phone: customer.phone || null,
+                  tenant_id: tenantId
+                });
+            }
+          }
+          performed.push({ type, quote_id: createdQuote.id, quote_number: createdQuote.quote_number, subtotal, total, diagnosis_summary: aiResult?.diagnosis_summary || null, probable_causes: aiResult?.probable_causes || [], labor_hours: aiResult?.labor_hours || null });
+        }
+      }
+      return ok(res, { assistant_message: plan.assistant_message || null, requested_fields: plan.requested_fields || [], actions_performed: performed });
+    } catch (e) {
+      cors(res);
+      res.statusCode = 500;
+      res.setHeader('Content-Type', 'application/json');
+      return res.end(JSON.stringify({ error: 'internal_error', message: e?.message || String(e) }));
+    }
+  }
 
   // Admin: create and list tenants; assign current admin to a tenant
   // POST /api/admin/tenants           -> create a new tenant (system admin or admin without tenant)

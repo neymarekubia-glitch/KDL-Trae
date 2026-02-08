@@ -1,70 +1,54 @@
-import React, { useEffect, useState } from "react";
-import { Customer, Vehicle } from "@/api/entities";
+import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
 import { useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { apiClient } from "@/api/apiClient";
-import { ArrowLeft, Save } from "lucide-react";
+import { ArrowLeft, Bot, Send } from "lucide-react";
 
 export default function AIAssistant() {
   const navigate = useNavigate();
-  const [customers, setCustomers] = useState([]);
-  const [vehicles, setVehicles] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
-  const [form, setForm] = useState({
-    customer_id: "",
-    vehicle_id: "",
-    problem_description: ""
-  });
-  const [result, setResult] = useState(null);
+  const [messages, setMessages] = useState([
+    { role: "assistant", content: "Olá! Conte o que precisa: diagnóstico, cadastro, consulta de placa, fornecedores ou produtos." }
+  ]);
+  const [input, setInput] = useState("");
+  const [sending, setSending] = useState(false);
+  const [requestedFields, setRequestedFields] = useState([]);
+  const [fieldValues, setFieldValues] = useState({});
+  const [lastActions, setLastActions] = useState([]);
 
-  useEffect(() => {
-    const load = async () => {
-      setLoading(true);
-      try {
-        const [cs, vs] = await Promise.all([
-          Customer.list("-created_date"),
-          Vehicle.list("-created_date")
-        ]);
-        setCustomers(cs);
-        setVehicles(vs);
-      } finally {
-        setLoading(false);
-      }
-    };
-    load();
-  }, []);
-
-  const customerVehicles = vehicles.filter(v => v.customer_id === form.customer_id);
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (submitting) return;
-    if (!form.customer_id || !form.vehicle_id || !form.problem_description.trim()) return;
-    setSubmitting(true);
+  const sendText = async (text) => {
+    if (!text.trim()) return;
+    const nextMessages = [...messages, { role: "user", content: text.trim() }];
+    setMessages(nextMessages);
+    setSending(true);
     try {
-      const data = await apiClient.request("POST", "/ai/diagnose", { body: form });
-      setResult(data);
-    } catch (err) {
-      alert("Falha ao gerar diagnóstico: " + err.message);
+      const data = await apiClient.request("POST", "/ai/chat", { body: { messages: nextMessages } });
+      const reply = data.assistant_message || "Ok.";
+      setMessages([...nextMessages, { role: "assistant", content: reply }]);
+      setRequestedFields(Array.isArray(data.requested_fields) ? data.requested_fields : []);
+      setFieldValues({});
+      setLastActions(Array.isArray(data.actions_performed) ? data.actions_performed : []);
+    } catch (e) {
+      alert("Falha no assistente: " + e.message);
     } finally {
-      setSubmitting(false);
+      setSending(false);
+      setInput("");
     }
   };
 
-  if (loading) {
-    return (
-      <div className="flex justify-center items-center min-h-screen bg-gray-50">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" />
-      </div>
-    );
-  }
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    await sendText(input);
+  };
+
+  const submitRequestedFields = async () => {
+    const parts = Object.entries(fieldValues).map(([k, v]) => `${k}: ${v}`);
+    const text = `Dados solicitados -> ${parts.join(", ")}`;
+    await sendText(text);
+  };
 
   return (
     <div className="p-4 md:p-8 bg-white min-h-screen">
@@ -73,118 +57,123 @@ export default function AIAssistant() {
           <Button variant="outline" size="icon" onClick={() => navigate(createPageUrl("Dashboard"))}>
             <ArrowLeft className="w-5 h-5" />
           </Button>
-          <div>
+          <div className="flex items-center gap-2">
+            <Bot className="w-6 h-6 text-blue-600" />
             <h1 className="text-3xl font-bold text-gray-900">Assistente IA</h1>
-            <p className="text-gray-500 mt-1">Diagnóstico e cotação automática</p>
           </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <Card className="shadow-lg border-0">
-            <CardHeader className="border-b bg-gray-50">
-              <CardTitle>Informações</CardTitle>
-            </CardHeader>
-            <CardContent className="p-6 space-y-6">
-              <div className="grid md:grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <Label>Cliente</Label>
-                  <Select
-                    value={form.customer_id}
-                    onValueChange={(value) => setForm({ ...form, customer_id: value, vehicle_id: "" })}
-                    required
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecione o cliente" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {customers.map((customer) => (
-                        <SelectItem key={customer.id} value={customer.id}>
-                          {customer.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+        <Card className="shadow-lg border-0">
+          <CardHeader className="border-b bg-gray-50">
+            <CardTitle>Conversa</CardTitle>
+          </CardHeader>
+          <CardContent className="p-6 space-y-4">
+            <div className="space-y-3 max-h-[50vh] overflow-y-auto pr-2">
+              {messages.map((m, idx) => (
+                <div key={idx} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+                  <div className={`rounded-lg px-4 py-2 text-sm ${m.role === "user" ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-800"}`}>
+                    {m.content}
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <Label>Veículo</Label>
-                  <Select
-                    value={form.vehicle_id}
-                    onValueChange={(value) => setForm({ ...form, vehicle_id: value })}
-                    required
-                    disabled={!form.customer_id}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecione o veículo" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {customerVehicles.map((vehicle) => (
-                        <SelectItem key={vehicle.id} value={vehicle.id}>
-                          {vehicle.brand} {vehicle.model} - {vehicle.license_plate}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
+              ))}
+            </div>
+            <form onSubmit={handleSubmit} className="flex gap-3 pt-2">
+              <Input
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder="Ex: Meu carro está engasgando quando ligo, placa DZZ-1A16"
+              />
+              <Button type="submit" disabled={sending} className="bg-blue-600 hover:bg-blue-700">
+                <Send className="w-4 h-4 mr-1" />
+                {sending ? "Enviando..." : "Enviar"}
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
 
-              <div className="space-y-2">
-                <Label>Problema relatado</Label>
-                <Textarea
-                  value={form.problem_description}
-                  onChange={(e) => setForm({ ...form, problem_description: e.target.value })}
-                  rows={4}
-                  placeholder="Descreva o problema relatado pelo cliente"
-                  required
-                />
+        {requestedFields.length > 0 && (
+          <Card className="shadow-lg border-0 mt-6">
+            <CardHeader className="border-b bg-gray-50">
+              <CardTitle>Informações necessárias</CardTitle>
+            </CardHeader>
+            <CardContent className="p-6 space-y-4">
+              {requestedFields.map((f) => (
+                <div key={f.key} className="space-y-1">
+                  <Label>{f.label || f.key}</Label>
+                  <Input
+                    value={fieldValues[f.key] || ""}
+                    onChange={(e) => setFieldValues({ ...fieldValues, [f.key]: e.target.value })}
+                    placeholder={f.type === "number" ? "0" : ""}
+                  />
+                </div>
+              ))}
+              <div className="flex justify-end">
+                <Button onClick={submitRequestedFields} className="bg-emerald-600 hover:bg-emerald-700">
+                  Enviar dados
+                </Button>
               </div>
             </CardContent>
           </Card>
+        )}
 
-          <div className="flex justify-end gap-4">
-            <Button
-              type="submit"
-              className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800"
-              disabled={submitting}
-            >
-              <Save className="w-4 h-4 mr-2" />
-              {submitting ? "Gerando..." : "Gerar diagnóstico e cotação"}
-            </Button>
-          </div>
-        </form>
-
-        {result && (
-          <div className="mt-8 space-y-6">
-            <Card className="shadow-lg border-0">
-              <CardHeader className="border-b bg-gray-50">
-                <CardTitle>Resultado</CardTitle>
-              </CardHeader>
-              <CardContent className="p-6 space-y-4">
-                {result.diagnosis_summary && (
-                  <div className="space-y-1">
-                    <Label>Resumo</Label>
-                    <p className="text-gray-700">{result.diagnosis_summary}</p>
-                  </div>
-                )}
-                <div className="grid md:grid-cols-2 gap-4">
-                  <div className="space-y-1">
-                    <Label>Subtotal</Label>
-                    <p className="font-bold">R$ {(result.subtotal || 0).toFixed(2)}</p>
-                  </div>
-                  <div className="space-y-1">
-                    <Label>Total</Label>
-                    <p className="font-bold text-green-700">R$ {(result.total || 0).toFixed(2)}</p>
-                  </div>
-                </div>
-                <div>
-                  <Button
-                    onClick={() => navigate(`${createPageUrl("QuoteDetail")}?id=${encodeURIComponent(result.quote_id)}`)}
-                    className="bg-blue-600 hover:bg-blue-700"
-                  >
-                    Ver cotação {result.quote_number}
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
+        {lastActions.length > 0 && (
+          <div className="mt-6 space-y-6">
+            {lastActions.map((a, i) => {
+              if (a.type === "diagnose_quote" && a.quote_id) {
+                return (
+                  <Card key={i} className="shadow-lg border-0">
+                    <CardHeader className="border-b bg-gray-50">
+                      <CardTitle>Diagnóstico e Cotação</CardTitle>
+                    </CardHeader>
+                    <CardContent className="p-6 space-y-3">
+                      {a.diagnosis_summary && (
+                        <div className="space-y-1">
+                          <Label>Resumo</Label>
+                          <p className="text-gray-700">{a.diagnosis_summary}</p>
+                        </div>
+                      )}
+                      <div className="grid md:grid-cols-2 gap-4">
+                        <div className="space-y-1">
+                          <Label>Subtotal</Label>
+                          <p className="font-bold">R$ {(a.subtotal || 0).toFixed(2)}</p>
+                        </div>
+                        <div className="space-y-1">
+                          <Label>Total</Label>
+                          <p className="font-bold text-green-700">R$ {(a.total || 0).toFixed(2)}</p>
+                        </div>
+                      </div>
+                      <div>
+                        <Button
+                          onClick={() => navigate(`${createPageUrl("QuoteDetail")}?id=${encodeURIComponent(a.quote_id)}`)}
+                          className="bg-blue-600 hover:bg-blue-700"
+                        >
+                          Ver cotação {a.quote_number}
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              }
+              if (a.type === "search_plate") {
+                return (
+                  <Card key={i} className="shadow-lg border-0">
+                    <CardHeader className="border-b bg-gray-50">
+                      <CardTitle>Consulta de Placa</CardTitle>
+                    </CardHeader>
+                    <CardContent className="p-6 space-y-2">
+                      {a.vehicle ? (
+                        <div className="text-sm text-gray-800">
+                          {a.vehicle.brand} {a.vehicle.model} - {a.vehicle.license_plate} • KM {a.vehicle.current_mileage}
+                        </div>
+                      ) : (
+                        <div className="text-sm text-orange-700">Nenhum veículo encontrado para a placa informada.</div>
+                      )}
+                    </CardContent>
+                  </Card>
+                );
+              }
+              return null;
+            })}
           </div>
         )}
       </div>
