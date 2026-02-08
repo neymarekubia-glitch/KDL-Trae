@@ -5,10 +5,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Search, Car, User, Calendar, Gauge, DollarSign, Wrench, AlertCircle, Zap } from "lucide-react";
+import { Search, Car, User, Calendar, Gauge, DollarSign, Wrench, AlertCircle } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { apiClient } from "@/api/apiClient";
 
 export default function VehicleSearch() {
   const [licensePlate, setLicensePlate] = useState("");
@@ -18,8 +17,6 @@ export default function VehicleSearch() {
   const [mileageHistory, setMileageHistory] = useState([]); // New state for mileage history
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
-  const [adviceLoading, setAdviceLoading] = useState(false);
-  const [advice, setAdvice] = useState(null);
 
   const handleSearch = async (e) => {
     e.preventDefault();
@@ -62,19 +59,6 @@ export default function VehicleSearch() {
       console.error("Failed to search vehicle:", e);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleAdvice = async () => {
-    if (!vehicle?.id || adviceLoading) return;
-    setAdviceLoading(true);
-    try {
-      const data = await apiClient.request("POST", "/ai/vehicle-advice", { body: { vehicle_id: vehicle.id } });
-      setAdvice(data);
-    } catch (e) {
-      alert("Falha ao obter conselho IA: " + e.message);
-    } finally {
-      setAdviceLoading(false);
     }
   };
 
@@ -181,16 +165,6 @@ export default function VehicleSearch() {
                       {vehicle.current_mileage?.toLocaleString()} km
                     </p>
                   </div>
-                  <div className="pt-2">
-                    <Button
-                      onClick={handleAdvice}
-                      className="bg-emerald-600 hover:bg-emerald-700"
-                      disabled={adviceLoading}
-                    >
-                      <Zap className="w-4 h-4 mr-2" />
-                      {adviceLoading ? "Gerando conselho..." : "Conselho IA de revisão"}
-                    </Button>
-                  </div>
                 </CardContent>
               </Card>
 
@@ -289,37 +263,6 @@ export default function VehicleSearch() {
                       </Card>
                     ))}
                   </div>
-                </CardContent>
-              </Card>
-            )}
-            
-            {advice && (
-              <Card className="shadow-lg border-0">
-                <CardHeader className="border-b bg-gradient-to-r from-emerald-50 to-emerald-100/50">
-                  <CardTitle className="flex items-center gap-2">
-                    <Zap className="w-5 h-5 text-emerald-600" />
-                    Recomendações da IA
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="p-6 space-y-4">
-                  {advice.message_to_customer && (
-                    <div className="bg-emerald-50 p-3 rounded border border-emerald-200">
-                      <p className="text-sm text-gray-700 whitespace-pre-wrap">{advice.message_to_customer}</p>
-                    </div>
-                  )}
-                  {Array.isArray(advice.recommendations) && advice.recommendations.length > 0 && (
-                    <div>
-                      <p className="text-sm font-semibold text-gray-700 mb-2">Itens sugeridos:</p>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        {advice.recommendations.map((rec, idx) => (
-                          <div key={idx} className="p-3 border rounded bg-white">
-                            <div className="font-medium">{rec.name}</div>
-                            {rec.reason && <div className="text-xs text-gray-600 mt-1">{rec.reason}</div>}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
                 </CardContent>
               </Card>
             )}

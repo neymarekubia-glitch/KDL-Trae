@@ -16,3 +16,21 @@ npm run dev
 ```bash
 npm run build
 ```
+
+## Assistente IA
+
+O sistema inclui um assistente por chat que permite:
+
+- **Cadastros**: criar/editar clientes, veículos e fornecedores em linguagem natural.
+- **Diagnóstico mecânico**: informar o sintoma (ex.: "carro falhando", "engasgando ao acelerar") e receber causas prováveis, peças sugeridas e tempo estimado.
+- **Cotações**: gerar cotação automática a partir do diagnóstico (com itens do catálogo da oficina).
+- **Consultas**: "Quantas cotações em análise?", "Quanto a receber?", "Faturamento do mês?" etc.
+- **Histórico do veículo**: consultar e sugerir revisão geral com base em serviços anteriores.
+- **Lembretes**: criar lembretes de manutenção para cliente/veículo.
+
+Para ativar o assistente, configure no **Vercel** (ou no ambiente do backend):
+
+- `OPENAI_API_KEY`: chave da API OpenAI (obrigatório para o chat).
+- `OPENAI_CHAT_MODEL`: modelo a usar (opcional; padrão: `gpt-4o-mini`).
+
+O assistente opera apenas nos dados do **tenant** do usuário logado (multi-tenant).
