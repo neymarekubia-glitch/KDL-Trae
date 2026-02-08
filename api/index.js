@@ -291,43 +291,68 @@ export default async function handler(req, res) {
       }
       if (!plan) {
         const lastUser = [...messages].reverse().find(m => m.role === 'user')?.content || '';
-        const text = String(lastUser).toLowerCase();
-        const performed = [];
-        const requested_fields = [];
-        const actions = [];
         const historyText = messages.filter(m => m.role === 'user').map(m => m.content).join(' . ');
-        const plateMatch = (historyText.match(/[A-Z]{3}-?[0-9][A-Z][0-9]{2}|[A-Z]{3}-[0-9]{4}|[A-Z]{3}[0-9]{4}/i) || lastUser.match(/[A-Z]{3}-?[0-9][A-Z][0-9]{2}|[A-Z]{3}-[0-9]{4}|[A-Z]{3}[0-9]{4}/i));
+        const text = `${historyText} . ${lastUser}`;
+        const lower = text.toLowerCase();
+        const kw = '(telefone|email|cpf|cnpj|endere[cç]o|placa|modelo|marca|ano|km)';
+        const nameMatch = text.match(new RegExp(`cliente\\s+(.+?)(?=\\s+${kw}\\b|$)`, 'i'));
+        const phoneMatch = text.match(/(?:telefone\\s*)?(\\+?\\d{2,3}\\s*)?(\\d{2})\\s*\\d{4,5}-?\\d{4}\\b|\\b\\d{10,13}\\b/);
+        const emailMatch = text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}/i);
+        const cpfMatch = text.match(/\\b\\d{3}\\.\\d{3}\\.\\d{3}-\\d{2}\\b|\\b\\d{11}\\b/);
+        const cnpjMatch = text.match(/\\b\\d{2}\\.\\d{3}\\.\\d{3}\\/\\d{4}-\\d{2}\\b|\\b\\d{14}\\b/);
+        const plateMatch = text.match(/[A-Z]{3}-?[0-9][A-Z][0-9]{2}|[A-Z]{3}-[0-9]{4}|[A-Z]{3}[0-9]{4}/i);
+        const modelMatch = lower.match(/modelo\\s+([a-z0-9à-öø-ÿ\\s]+)/i);
+        const brandMatch = lower.match(/marca\\s+([a-z0-9à-öø-ÿ\\s]+)/i);
+        const yearMatch = text.match(/\\b(ano|year)\\s*(\\d{4})\\b/i) || text.match(/\\b\\d{4}\\b/);
+        const kmMatch = text.match(/\\bkm\\s*(\\d{1,7})\\b/i) || text.match(/\\b(\\d{1,7})\\s*km\\b/i);
         const plate = plateMatch ? plateMatch[0].toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/^([A-Z]{3})([0-9][A-Z][0-9]{2}|[0-9]{4})$/, (m, a, b) => `${a}-${b}`) : null;
-        const hasCadastrar = /cadastr/i.test(text);
-        const hasCliente = /cliente/i.test(text);
-        const hasVeiculo = /ve[ií]culo|carro/i.test(text);
-        const hasFornecedor = /fornecedor/i.test(text);
-        const hasProduto = /produto|pe[cç]a|servi[cç]o/i.test(text);
-        const wantsConsultaPlaca = /consultar.*placa|placa\s*[A-Z]/i.test(lastUser);
-        const problem = /engasga|engasg|barulho|n[aã]o liga|falhando|vazando|trepida|desalinhado|puxando|perda de pot[eê]ncia|luz de alerta|aquecendo|fum[aá]ndo|vibra/i.test(text);
-        const phoneMatch = historyText.match(/(\+?\d{2,3}\s?)?(\d{2})\s?\d{4,5}-?\d{4}/) || historyText.match(/\b\d{10,13}\b/);
-        const phone = phoneMatch ? phoneMatch[0].replace(/\D/g, '') : null;
-        let name = null;
-        const nameAfterCliente = historyText.match(/cliente\s+([A-Za-zÀ-ÖØ-öø-ÿ'\s]+)/i);
-        if (nameAfterCliente) name = nameAfterCliente[1].trim();
-        let brandModel = null;
-        const bm = historyText.match(/(um|uma)\s+([A-Za-z0-9À-ÖØ-öø-ÿ\s]+)\s+(da|de)\s+placa/i) || historyText.match(/(um|uma)\s+([A-Za-z0-9À-ÖØ-öø-ÿ\s]+)\s+placa/i);
-        if (bm) brandModel = bm[2].trim();
+        const name = nameMatch ? nameMatch[1].trim() : null;
+        const phone = phoneMatch ? String(phoneMatch[0]).replace(/\\D/g, '') : null;
+        const email = emailMatch ? emailMatch[0] : null;
+        const cpf = cpfMatch ? cpfMatch[0].replace(/\\D/g, '') : null;
+        const cnpj = cnpjMatch ? cnpjMatch[0].replace(/\\D/g, '') : null;
+        const brand = brandMatch ? brandMatch[1].trim() : null;
+        const modelName = modelMatch ? modelMatch[1].trim() : null;
+        const year = yearMatch ? Number((Array.isArray(yearMatch) ? yearMatch.pop() : yearMatch[0])) : null;
+        const km = kmMatch ? Number(kmMatch[kmMatch.length - 1]) : null;
+        const actions = [];
+        const requested_fields = [];
+        const hasCadastrar = /cadastr/i.test(lower);
+        const hasCliente = /cliente/i.test(lower);
+        const hasVeiculo = /ve[ií]culo|carro/i.test(lower);
+        const hasFornecedor = /fornecedor/i.test(lower);
+        const hasProduto = /produto|pe[cç]a|servi[cç]o/i.test(lower);
+        const wantsConsultaPlaca = /consultar.*placa|placa\\s*[A-Z]/i.test(lastUser);
+        const problem = /engasga|engasg|barulho|n[aã]o liga|falhando|vazando|trepida|desalinhado|puxando|perda de pot[eê]ncia|luz de alerta|aquecendo|fum[aá]ndo|vibra/i.test(lower);
+        if (problem) {
+          actions.push({ type: 'diagnose', params: { problem_description: lastUser } });
+        }
         if (hasCadastrar && hasCliente) {
-          actions.push({ type: 'create_customer', params: name ? { name, phone } : {} });
-          if (!name) {
+          const params = {};
+          if (name) params.name = name;
+          if (phone) params.phone = phone;
+          if (email) params.email = email;
+          if (cpf) params.cpf = cpf;
+          if (Object.keys(params).length > 0) {
+            actions.push({ type: 'create_customer', params });
+          } else {
             requested_fields.push({ key: 'name', label: 'Nome do cliente', type: 'text' });
-            requested_fields.push({ key: 'phone', label: 'Telefone (opcional)', type: 'text' });
+            requested_fields.push({ key: 'phone', label: 'Telefone', type: 'text' });
           }
         }
-        if (hasCadastrar && (hasVeiculo || plate)) {
-          const baseVehicleParams = { license_plate: plate || '', brand: (brandModel || '').split(' ')[0] || 'Desconhecido', model: (brandModel || '').split(' ').slice(1).join(' ') || 'Desconhecido' };
-          actions.push({ type: 'create_vehicle', params: baseVehicleParams });
-          if (!plate) requested_fields.push({ key: 'license_plate', label: 'Placa do veículo', type: 'text' });
-          requested_fields.push({ key: 'brand', label: 'Marca', type: 'text' });
-          requested_fields.push({ key: 'model', label: 'Modelo', type: 'text' });
-          requested_fields.push({ key: 'year', label: 'Ano', type: 'number' });
-          requested_fields.push({ key: 'current_mileage', label: 'KM atual', type: 'number' });
+        if (hasCadastrar && hasVeiculo) {
+          const v = {};
+          if (plate) v.license_plate = plate;
+          if (brand) v.brand = brand;
+          if (modelName) v.model = modelName;
+          if (year) v.year = year;
+          if (km) v.current_mileage = km;
+          actions.push({ type: 'create_vehicle', params: v });
+          if (!v.license_plate) requested_fields.push({ key: 'license_plate', label: 'Placa do veículo', type: 'text' });
+          if (!v.brand) requested_fields.push({ key: 'brand', label: 'Marca', type: 'text' });
+          if (!v.model) requested_fields.push({ key: 'model', label: 'Modelo', type: 'text' });
+          if (!v.year) requested_fields.push({ key: 'year', label: 'Ano', type: 'number' });
+          if (v.current_mileage === undefined) requested_fields.push({ key: 'current_mileage', label: 'KM atual', type: 'number' });
         }
         if (hasFornecedor) {
           actions.push({ type: 'add_supplier', params: {} });
@@ -346,15 +371,10 @@ export default async function handler(req, res) {
           actions.push({ type: 'search_plate', params: { license_plate: plate || '' } });
           if (!plate) requested_fields.push({ key: 'license_plate', label: 'Placa do veículo', type: 'text' });
         }
-        if (problem) {
-          actions.push({ type: 'diagnose', params: { problem_description: lastUser } });
-          if (plate) actions.push({ type: 'diagnose_quote', params: { license_plate: plate, problem_description: lastUser } });
+        if (!problem && hasCadastrar && plate) {
+          actions.push({ type: 'diagnose_quote', params: { license_plate: plate, problem_description: lastUser } });
         }
-        let assistant_message = 'Ok, preciso de alguns dados para continuar.';
-        if (problem) assistant_message = 'Gerando diagnóstico preliminar baseado nos sintomas.';
-        if (actions.find(a => a.type === 'create_customer') && name) assistant_message = 'Cadastrando cliente com os dados informados.';
-        if (actions.find(a => a.type === 'create_vehicle') && plate) assistant_message = 'Cadastrando veículo com os dados informados.';
-        if (actions.find(a => a.type === 'search_plate')) assistant_message = 'Consultando veículo pela placa.';
+        let assistant_message = problem ? 'Gerando diagnóstico preliminar baseado nos sintomas.' : 'Ok.';
         plan = { assistant_message, requested_fields, actions };
       }
       const actions = Array.isArray(plan.actions) ? plan.actions : [];
@@ -637,21 +657,43 @@ export default async function handler(req, res) {
           performed.push({ type, quote_id: createdQuote.id, quote_number: createdQuote.quote_number, subtotal, total, diagnosis_summary: aiResult?.diagnosis_summary || null, probable_causes: aiResult?.probable_causes || [], labor_hours: aiResult?.labor_hours || null });
         }
         else if (type === 'count_open_quotes') {
-          const { data } = await supabase.from('quotes').select('id,status').eq('tenant_id', tenantId);
-          const count = (data || []).filter(q => ['em_analise','aprovada','pendente'].includes(String(q.status||'').toLowerCase())).length;
-          performed.push({ type, count });
+          const { data } = await supabase.from('quotes').select('id,status,total').eq('tenant_id', tenantId);
+          const open = (data || []).filter(q => ['em_analise','aprovada','pendente'].includes(String(q.status||'').toLowerCase()));
+          const count = open.length;
+          const totalValue = open.reduce((s,q)=> s + Number(q.total || 0), 0);
+          const ids = open.map(q => q.id);
+          let profit = 0;
+          if (ids.length) {
+            const { data: items } = await supabase.from('quote_items').select('quote_id,quantity,unit_price,cost_price').in('quote_id', ids).eq('tenant_id', tenantId);
+            profit = (items || []).reduce((s,i)=> s + (Number(i.unit_price || 0) - Number(i.cost_price || 0)) * Number(i.quantity || 1), 0);
+          }
+          performed.push({ type, count, total_value: totalValue, estimated_profit: profit });
         }
         else if (type === 'amount_receivable') {
-          const { data } = await supabase.from('quotes').select('amount_pending,total,payment_status').eq('tenant_id', tenantId);
-          const receivable = (data || []).filter(q => (String(q.payment_status||'').toLowerCase() !== 'pago')).reduce((s,q)=> s + Number(q.amount_pending ?? q.total ?? 0), 0);
-          performed.push({ type, amount: receivable });
+          const { data } = await supabase.from('quotes').select('id,amount_pending,total,payment_status').eq('tenant_id', tenantId);
+          const unpaid = (data || []).filter(q => (String(q.payment_status||'').toLowerCase() !== 'pago'));
+          const amount = unpaid.reduce((s,q)=> s + Number(q.amount_pending ?? q.total ?? 0), 0);
+          const ids = unpaid.map(q => q.id);
+          let profit = 0;
+          if (ids.length) {
+            const { data: items } = await supabase.from('quote_items').select('quote_id,quantity,unit_price,cost_price').in('quote_id', ids).eq('tenant_id', tenantId);
+            profit = (items || []).reduce((s,i)=> s + (Number(i.unit_price || 0) - Number(i.cost_price || 0)) * Number(i.quantity || 1), 0);
+          }
+          performed.push({ type, count: unpaid.length, amount, estimated_profit: profit });
         }
         else if (type === 'month_revenue') {
           const now = new Date();
           const monthStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
-          const { data } = await supabase.from('quotes').select('amount_paid,total,payment_status,service_date').eq('tenant_id', tenantId);
-          const revenue = (data || []).filter(q => (String(q.service_date||'').startsWith(monthStr))).reduce((s,q)=> s + Number(q.amount_paid ?? ((String(q.payment_status||'').toLowerCase()==='pago') ? (q.total ?? 0) : 0)),0);
-          performed.push({ type, month: monthStr, amount: revenue });
+          const { data } = await supabase.from('quotes').select('id,amount_paid,total,payment_status,service_date').eq('tenant_id', tenantId);
+          const monthQuotes = (data || []).filter(q => (String(q.service_date||'').startsWith(monthStr)));
+          const revenue = monthQuotes.reduce((s,q)=> s + Number(q.amount_paid ?? ((String(q.payment_status||'').toLowerCase()==='pago') ? (q.total ?? 0) : 0)),0);
+          const ids = monthQuotes.map(q => q.id);
+          let profit = 0;
+          if (ids.length) {
+            const { data: items } = await supabase.from('quote_items').select('quote_id,quantity,unit_price,cost_price').in('quote_id', ids).eq('tenant_id', tenantId);
+            profit = (items || []).reduce((s,i)=> s + (Number(i.unit_price || 0) - Number(i.cost_price || 0)) * Number(i.quantity || 1), 0);
+          }
+          performed.push({ type, month: monthStr, count: monthQuotes.length, amount: revenue, estimated_profit: profit });
         }
       }
       return ok(res, { assistant_message: plan.assistant_message || null, requested_fields: plan.requested_fields || [], actions_performed: performed });

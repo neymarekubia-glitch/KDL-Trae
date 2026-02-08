@@ -162,9 +162,12 @@ export default function AIAssistant() {
                         </div>
                       )}
                       <div className="mt-4">
-                        <button className="btn btn-primary" onClick={() => handleSendText("criar cotação")}>
+                        <Button
+                          onClick={() => sendText("criar cotação", { diagnosis_last: a })}
+                          className="bg-blue-600 hover:bg-blue-700"
+                        >
                           Criar cotação automática
-                        </button>
+                        </Button>
                       </div>
                     </CardContent>
                   </Card>
