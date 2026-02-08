@@ -505,20 +505,20 @@ function friendlyOpenAIError(err) {
   const msg = err?.message || '';
   const code = err?.status || err?.code;
   if (code === 429 || msg.includes('quota') || msg.includes('exceeded')) {
-    return 'Limite de uso da OpenAI atingido. Verifique seu plano e cobrança em https://platform.openai.com/ (Billing / Usage).';
+    return 'O assistente está temporariamente indisponível. Por favor, tente novamente mais tarde ou entre em contato com o suporte.';
   }
-  if (code === 401 || msg.includes('invalid') && msg.includes('key')) {
-    return 'Chave da OpenAI inválida ou expirada. Verifique OPENAI_API_KEY no Vercel.';
+  if (code === 401 || (msg.includes('invalid') && msg.includes('key'))) {
+    return 'O assistente não está disponível no momento. Entre em contato com o suporte.';
   }
   if (code === 429 && msg.includes('rate')) {
-    return 'Muitas requisições no momento. Aguarde alguns segundos e tente de novo.';
+    return 'Muitas requisições no momento. Aguarde alguns segundos e tente novamente.';
   }
-  return msg || 'Erro ao comunicar com o assistente. Tente novamente.';
+  return 'O assistente encontrou um erro. Por favor, tente novamente ou entre em contato com o suporte.';
 }
 
 async function runChat(messages, tenantId, tenantName, supabase) {
   if (!OPENAI_API_KEY) {
-    return { error: 'OPENAI_API_KEY não configurada. Configure a variável no Vercel (Settings > Environment Variables).' };
+    return { error: 'O assistente não está disponível no momento. Entre em contato com o suporte.' };
   }
   const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
   const systemPrompt = getSystemPrompt(tenantName);
