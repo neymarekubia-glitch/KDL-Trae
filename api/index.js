@@ -507,7 +507,8 @@ export default async function handler(req, res) {
               body: JSON.stringify({
                 model,
                 messages: [{ role: 'system', content: 'Você é um assistente de oficina mecânica.' }, { role: 'user', content: prompt }],
-                temperature: 0.2
+                temperature: 0.2,
+                response_format: { type: 'json_object' }
               })
             });
             const json = await resp.json();
@@ -517,6 +518,13 @@ export default async function handler(req, res) {
             } catch {
               aiResult = null;
             }
+          }
+          if (!aiResult && context?.diagnosis_last) {
+            aiResult = {
+              diagnosis_summary: context.diagnosis_last.diagnosis_summary || null,
+              probable_causes: context.diagnosis_last.probable_causes || [],
+              recommended_services: context.diagnosis_last.recommended_services || []
+            };
           }
           const recs = Array.isArray(aiResult?.recommended_services) ? aiResult.recommended_services : [];
           const mappedItems = recs.map(r => {

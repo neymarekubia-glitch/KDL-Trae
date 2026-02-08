@@ -119,6 +119,32 @@ export default function AIAssistant() {
         {lastActions.length > 0 && (
           <div className="mt-6 space-y-6">
             {lastActions.map((a, i) => {
+              if (a.type === "create_customer") {
+                return (
+                  <Card key={i} className="shadow-lg border-0">
+                    <CardHeader className="border-b bg-gray-50">
+                      <CardTitle>Cliente criado</CardTitle>
+                    </CardHeader>
+                    <CardContent className="p-6">
+                      <p className="text-sm text-gray-800">ID: {a.id}</p>
+                      <p className="text-sm text-gray-800">Nome: {a.name}</p>
+                    </CardContent>
+                  </Card>
+                );
+              }
+              if (a.type === "create_vehicle") {
+                return (
+                  <Card key={i} className="shadow-lg border-0">
+                    <CardHeader className="border-b bg-gray-50">
+                      <CardTitle>Veículo criado</CardTitle>
+                    </CardHeader>
+                    <CardContent className="p-6">
+                      <p className="text-sm text-gray-800">ID: {a.id}</p>
+                      <p className="text-sm text-gray-800">Placa: {a.license_plate}</p>
+                    </CardContent>
+                  </Card>
+                );
+              }
               if (a.type === "diagnose") {
                 return (
                   <Card key={i} className="shadow-lg border-0">
