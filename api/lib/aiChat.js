@@ -1,7 +1,5 @@
-// Compatível com CommonJS (Vercel) e ESM: openai em CJS não usa .default
-const OpenAIModule = require('openai');
-const OpenAI = OpenAIModule.default || OpenAIModule;
-const { getDiagnosticSuggestions } = require('./diagnosticKnowledge');
+import OpenAI from 'openai';
+import { getDiagnosticSuggestions } from './diagnosticKnowledge.js';
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const MODEL = process.env.OPENAI_CHAT_MODEL || 'gpt-4o-mini';
@@ -507,9 +505,6 @@ async function runChat(messages, tenantId, tenantName, supabase) {
   if (!OPENAI_API_KEY) {
     return { error: 'OPENAI_API_KEY não configurada. Configure a variável no Vercel (Settings > Environment Variables).' };
   }
-  if (!OpenAI || typeof OpenAI !== 'function') {
-    return { error: 'Módulo do assistente indisponível. Verifique o deploy da API.' };
-  }
   const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
   const systemPrompt = getSystemPrompt(tenantName);
   const fullMessages = [{ role: 'system', content: systemPrompt }, ...messages];
@@ -623,4 +618,4 @@ async function handleAIChat(req, res, auth, supabase) {
   }
 }
 
-module.exports = { handleAIChat, getSystemPrompt, executeTool };
+export { handleAIChat, getSystemPrompt, executeTool };

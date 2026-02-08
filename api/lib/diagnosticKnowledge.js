@@ -120,4 +120,4 @@ function getDiagnosticSuggestions(symptom) {
   };
 }
 
-module.exports = { getDiagnosticSuggestions, findDiagnostic, KNOWLEDGE };
+export { getDiagnosticSuggestions, findDiagnostic, KNOWLEDGE };
