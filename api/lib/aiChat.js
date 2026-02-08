@@ -1,4 +1,6 @@
-const OpenAI = require('openai').default;
+// Compatível com CommonJS (Vercel) e ESM: openai em CJS não usa .default
+const OpenAIModule = require('openai');
+const OpenAI = OpenAIModule.default || OpenAIModule;
 const { getDiagnosticSuggestions } = require('./diagnosticKnowledge');
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
@@ -505,6 +507,9 @@ async function runChat(messages, tenantId, tenantName, supabase) {
   if (!OPENAI_API_KEY) {
     return { error: 'OPENAI_API_KEY não configurada. Configure a variável no Vercel (Settings > Environment Variables).' };
   }
+  if (!OpenAI || typeof OpenAI !== 'function') {
+    return { error: 'Módulo do assistente indisponível. Verifique o deploy da API.' };
+  }
   const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
   const systemPrompt = getSystemPrompt(tenantName);
   const fullMessages = [{ role: 'system', content: systemPrompt }, ...messages];
@@ -566,23 +571,27 @@ async function handleAIChat(req, res, auth, supabase) {
 
   let body = {};
   try {
-    const raw = await new Promise((resolve, reject) => {
-      let b = '';
-      req.on('data', (c) => (b += c));
-      req.on('end', () => {
-        try {
-          resolve(b ? JSON.parse(b) : {});
-        } catch (e) {
-          reject(e);
-        }
+    if (req.body && typeof req.body === 'object') {
+      body = req.body;
+    } else {
+      const raw = await new Promise((resolve, reject) => {
+        let b = '';
+        req.on('data', (c) => (b += c));
+        req.on('end', () => {
+          try {
+            resolve(b ? JSON.parse(b) : {});
+          } catch (e) {
+            reject(e);
+          }
+        });
+        req.on('error', reject);
       });
-      req.on('error', reject);
-    });
-    body = raw;
+      body = raw;
+    }
   } catch (e) {
     res.statusCode = 400;
     res.setHeader('Content-Type', 'application/json');
-    return res.end(JSON.stringify({ error: 'invalid_json' }));
+    return res.end(JSON.stringify({ error: 'invalid_json', message: e?.message }));
   }
 
   const messages = Array.isArray(body.messages) ? body.messages : [];
