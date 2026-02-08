@@ -151,6 +151,68 @@ export default function AIAssistant() {
                     <CardHeader className="border-b bg-gray-50">
                       <CardTitle>Diagnóstico preliminar</CardTitle>
                     </CardHeader>
+                    <CardContent className="p-6">
+                      {a.diagnosis_summary && <p className="text-sm text-gray-800">{a.diagnosis_summary}</p>}
+                      {(a.probable_causes || []).length > 0 && (
+                        <div className="mt-2">
+                          <p className="text-sm font-medium">Causas prováveis:</p>
+                          <ul className="list-disc ml-5">
+                            {a.probable_causes.map((c, idx) => <li key={idx} className="text-sm">{c}</li>)}
+                          </ul>
+                        </div>
+                      )}
+                      <div className="mt-4">
+                        <button className="btn btn-primary" onClick={() => handleSendText("criar cotação")}>
+                          Criar cotação automática
+                        </button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              }
+              if (a.type === "count_open_quotes") {
+                return (
+                  <Card key={i} className="shadow-lg border-0">
+                    <CardHeader className="border-b bg-gray-50">
+                      <CardTitle>Cotações em aberto</CardTitle>
+                    </CardHeader>
+                    <CardContent className="p-6">
+                      <p className="text-sm text-gray-800">Total: {a.count}</p>
+                    </CardContent>
+                  </Card>
+                );
+              }
+              if (a.type === "amount_receivable") {
+                return (
+                  <Card key={i} className="shadow-lg border-0">
+                    <CardHeader className="border-b bg-gray-50">
+                      <CardTitle>À receber</CardTitle>
+                    </CardHeader>
+                    <CardContent className="p-6">
+                      <p className="text-sm text-gray-800">Valor: R$ {Number(a.amount || 0).toFixed(2)}</p>
+                    </CardContent>
+                  </Card>
+                );
+              }
+              if (a.type === "month_revenue") {
+                return (
+                  <Card key={i} className="shadow-lg border-0">
+                    <CardHeader className="border-b bg-gray-50">
+                      <CardTitle>Faturamento do mês</CardTitle>
+                    </CardHeader>
+                    <CardContent className="p-6">
+                      <p className="text-sm text-gray-800">Período: {a.month}</p>
+                      <p className="text-sm text-gray-800">Valor: R$ {Number(a.amount || 0).toFixed(2)}</p>
+                    </CardContent>
+                  </Card>
+                );
+              }
+              if (a.type === "diagnose") {
+                return (
+                  <Card key={i} className="shadow-lg border-0">
+                    <CardHeader className="border-b bg-gray-50">
+                      <CardTitle>Diagnóstico preliminar</CardTitle>
+                    </CardHeader>
                     <CardContent className="p-6 space-y-3">
                       {a.diagnosis_summary && (
                         <div className="space-y-1">

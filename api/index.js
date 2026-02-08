@@ -295,7 +295,8 @@ export default async function handler(req, res) {
         const performed = [];
         const requested_fields = [];
         const actions = [];
-        const plateMatch = lastUser.match(/[A-Z]{3}-?[0-9][A-Z][0-9]{2}|[A-Z]{3}-[0-9]{4}|[A-Z]{3}[0-9]{4}/i);
+        const historyText = messages.filter(m => m.role === 'user').map(m => m.content).join(' . ');
+        const plateMatch = (historyText.match(/[A-Z]{3}-?[0-9][A-Z][0-9]{2}|[A-Z]{3}-[0-9]{4}|[A-Z]{3}[0-9]{4}/i) || lastUser.match(/[A-Z]{3}-?[0-9][A-Z][0-9]{2}|[A-Z]{3}-[0-9]{4}|[A-Z]{3}[0-9]{4}/i));
         const plate = plateMatch ? plateMatch[0].toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/^([A-Z]{3})([0-9][A-Z][0-9]{2}|[0-9]{4})$/, (m, a, b) => `${a}-${b}`) : null;
         const hasCadastrar = /cadastr/i.test(text);
         const hasCliente = /cliente/i.test(text);
@@ -304,46 +305,57 @@ export default async function handler(req, res) {
         const hasProduto = /produto|pe[cç]a|servi[cç]o/i.test(text);
         const wantsConsultaPlaca = /consultar.*placa|placa\s*[A-Z]/i.test(lastUser);
         const problem = /engasga|engasg|barulho|n[aã]o liga|falhando|vazando|trepida|desalinhado|puxando|perda de pot[eê]ncia|luz de alerta|aquecendo|fum[aá]ndo|vibra/i.test(text);
-        const phoneMatch = lastUser.match(/(\+?\d{2,3}\s?)?(\d{2})\s?\d{4,5}-?\d{4}/) || lastUser.match(/\b\d{10,13}\b/);
+        const phoneMatch = historyText.match(/(\+?\d{2,3}\s?)?(\d{2})\s?\d{4,5}-?\d{4}/) || historyText.match(/\b\d{10,13}\b/);
         const phone = phoneMatch ? phoneMatch[0].replace(/\D/g, '') : null;
         let name = null;
-        const nameAfterCliente = lastUser.match(/cliente\s+([A-Za-zÀ-ÖØ-öø-ÿ'\s]+)/i);
+        const nameAfterCliente = historyText.match(/cliente\s+([A-Za-zÀ-ÖØ-öø-ÿ'\s]+)/i);
         if (nameAfterCliente) name = nameAfterCliente[1].trim();
+        let brandModel = null;
+        const bm = historyText.match(/(um|uma)\s+([A-Za-z0-9À-ÖØ-öø-ÿ\s]+)\s+(da|de)\s+placa/i) || historyText.match(/(um|uma)\s+([A-Za-z0-9À-ÖØ-öø-ÿ\s]+)\s+placa/i);
+        if (bm) brandModel = bm[2].trim();
         if (hasCadastrar && hasCliente) {
-          if (name) {
-            actions.push({ type: 'create_customer', params: { name, phone } });
-          } else {
-            actions.push({ type: 'create_customer', params: {} });
+          actions.push({ type: 'create_customer', params: name ? { name, phone } : {} });
+          if (!name) {
             requested_fields.push({ key: 'name', label: 'Nome do cliente', type: 'text' });
             requested_fields.push({ key: 'phone', label: 'Telefone (opcional)', type: 'text' });
           }
-        } else if (hasCadastrar && hasVeiculo) {
-          actions.push({ type: 'create_vehicle', params: {} });
-          requested_fields.push({ key: 'license_plate', label: 'Placa do veículo', type: 'text' });
+        }
+        if (hasCadastrar && (hasVeiculo || plate)) {
+          const baseVehicleParams = { license_plate: plate || '', brand: (brandModel || '').split(' ')[0] || 'Desconhecido', model: (brandModel || '').split(' ').slice(1).join(' ') || 'Desconhecido' };
+          actions.push({ type: 'create_vehicle', params: baseVehicleParams });
+          if (!plate) requested_fields.push({ key: 'license_plate', label: 'Placa do veículo', type: 'text' });
           requested_fields.push({ key: 'brand', label: 'Marca', type: 'text' });
           requested_fields.push({ key: 'model', label: 'Modelo', type: 'text' });
           requested_fields.push({ key: 'year', label: 'Ano', type: 'number' });
           requested_fields.push({ key: 'current_mileage', label: 'KM atual', type: 'number' });
-        } else if (hasFornecedor) {
+        }
+        if (hasFornecedor) {
           actions.push({ type: 'add_supplier', params: {} });
           requested_fields.push({ key: 'name', label: 'Nome do fornecedor', type: 'text' });
           requested_fields.push({ key: 'phone', label: 'Telefone (opcional)', type: 'text' });
           requested_fields.push({ key: 'email', label: 'Email (opcional)', type: 'text' });
-        } else if (hasProduto) {
+        }
+        if (hasProduto) {
           actions.push({ type: 'add_service_item', params: {} });
           requested_fields.push({ key: 'name', label: 'Nome do item', type: 'text' });
           requested_fields.push({ key: 'type', label: 'Tipo (servico|peca|produto)', type: 'text' });
           requested_fields.push({ key: 'sale_price', label: 'Preço de venda', type: 'number' });
           requested_fields.push({ key: 'cost_price', label: 'Preço de custo', type: 'number' });
-        } else if (wantsConsultaPlaca || plate) {
+        }
+        if (wantsConsultaPlaca || plate) {
           actions.push({ type: 'search_plate', params: { license_plate: plate || '' } });
           if (!plate) requested_fields.push({ key: 'license_plate', label: 'Placa do veículo', type: 'text' });
-        } else if (problem) {
+        }
+        if (problem) {
           actions.push({ type: 'diagnose', params: { problem_description: lastUser } });
           if (plate) actions.push({ type: 'diagnose_quote', params: { license_plate: plate, problem_description: lastUser } });
-          // sem placa, primeiro diagnóstico; depois ofereça criar cotação
         }
-        plan = { assistant_message: 'Ok, preciso de alguns dados para continuar.', requested_fields, actions };
+        let assistant_message = 'Ok, preciso de alguns dados para continuar.';
+        if (problem) assistant_message = 'Gerando diagnóstico preliminar baseado nos sintomas.';
+        if (actions.find(a => a.type === 'create_customer') && name) assistant_message = 'Cadastrando cliente com os dados informados.';
+        if (actions.find(a => a.type === 'create_vehicle') && plate) assistant_message = 'Cadastrando veículo com os dados informados.';
+        if (actions.find(a => a.type === 'search_plate')) assistant_message = 'Consultando veículo pela placa.';
+        plan = { assistant_message, requested_fields, actions };
       }
       const actions = Array.isArray(plan.actions) ? plan.actions : [];
       const performed = [];
@@ -621,8 +633,25 @@ export default async function handler(req, res) {
                   tenant_id: tenantId
                 });
             }
-          }
+        }
           performed.push({ type, quote_id: createdQuote.id, quote_number: createdQuote.quote_number, subtotal, total, diagnosis_summary: aiResult?.diagnosis_summary || null, probable_causes: aiResult?.probable_causes || [], labor_hours: aiResult?.labor_hours || null });
+        }
+        else if (type === 'count_open_quotes') {
+          const { data } = await supabase.from('quotes').select('id,status').eq('tenant_id', tenantId);
+          const count = (data || []).filter(q => ['em_analise','aprovada','pendente'].includes(String(q.status||'').toLowerCase())).length;
+          performed.push({ type, count });
+        }
+        else if (type === 'amount_receivable') {
+          const { data } = await supabase.from('quotes').select('amount_pending,total,payment_status').eq('tenant_id', tenantId);
+          const receivable = (data || []).filter(q => (String(q.payment_status||'').toLowerCase() !== 'pago')).reduce((s,q)=> s + Number(q.amount_pending ?? q.total ?? 0), 0);
+          performed.push({ type, amount: receivable });
+        }
+        else if (type === 'month_revenue') {
+          const now = new Date();
+          const monthStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+          const { data } = await supabase.from('quotes').select('amount_paid,total,payment_status,service_date').eq('tenant_id', tenantId);
+          const revenue = (data || []).filter(q => (String(q.service_date||'').startsWith(monthStr))).reduce((s,q)=> s + Number(q.amount_paid ?? ((String(q.payment_status||'').toLowerCase()==='pago') ? (q.total ?? 0) : 0)),0);
+          performed.push({ type, month: monthStr, amount: revenue });
         }
       }
       return ok(res, { assistant_message: plan.assistant_message || null, requested_fields: plan.requested_fields || [], actions_performed: performed });
