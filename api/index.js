@@ -265,6 +265,7 @@ export default async function handler(req, res) {
           'Só peça requested_fields quando faltarem dados.',
           'Quando possível, infira do texto: nome do cliente, placa, marca, modelo, ano, km.',
           'Para diagnose_quote, inclua "problem_description" e um identificador do veículo (vehicle_id ou license_plate).',
+          'Quando o usuário descreve um problema sem placa, execute "diagnose" primeiro para dar diagnóstico preliminar; depois ofereça criar cotação e vincular a cliente/veículo.',
           'Exemplos de saída:',
           '{"assistant_message":"Vamos cadastrar seu cliente.","requested_fields":[{"key":"name","label":"Nome do cliente","type":"text"},{"key":"phone","label":"Telefone","type":"text"}],"actions":[{"type":"create_customer","params":{}}]}',
           '{"assistant_message":"Vou consultar a placa.","requested_fields":[],"actions":[{"type":"search_plate","params":{"license_plate":"DZZ-1A16"}}]}',
@@ -302,11 +303,20 @@ export default async function handler(req, res) {
         const hasFornecedor = /fornecedor/i.test(text);
         const hasProduto = /produto|pe[cç]a|servi[cç]o/i.test(text);
         const wantsConsultaPlaca = /consultar.*placa|placa\s*[A-Z]/i.test(lastUser);
-        const problem = /engasga|engasg|barulho|n[aã]o liga|falhando|vazando|trepida|desalinhado|puxando/i.test(text);
+        const problem = /engasga|engasg|barulho|n[aã]o liga|falhando|vazando|trepida|desalinhado|puxando|perda de pot[eê]ncia|luz de alerta|aquecendo|fum[aá]ndo|vibra/i.test(text);
+        const phoneMatch = lastUser.match(/(\+?\d{2,3}\s?)?(\d{2})\s?\d{4,5}-?\d{4}/) || lastUser.match(/\b\d{10,13}\b/);
+        const phone = phoneMatch ? phoneMatch[0].replace(/\D/g, '') : null;
+        let name = null;
+        const nameAfterCliente = lastUser.match(/cliente\s+([A-Za-zÀ-ÖØ-öø-ÿ'\s]+)/i);
+        if (nameAfterCliente) name = nameAfterCliente[1].trim();
         if (hasCadastrar && hasCliente) {
-          actions.push({ type: 'create_customer', params: {} });
-          requested_fields.push({ key: 'name', label: 'Nome do cliente', type: 'text' });
-          requested_fields.push({ key: 'phone', label: 'Telefone (opcional)', type: 'text' });
+          if (name) {
+            actions.push({ type: 'create_customer', params: { name, phone } });
+          } else {
+            actions.push({ type: 'create_customer', params: {} });
+            requested_fields.push({ key: 'name', label: 'Nome do cliente', type: 'text' });
+            requested_fields.push({ key: 'phone', label: 'Telefone (opcional)', type: 'text' });
+          }
         } else if (hasCadastrar && hasVeiculo) {
           actions.push({ type: 'create_vehicle', params: {} });
           requested_fields.push({ key: 'license_plate', label: 'Placa do veículo', type: 'text' });
@@ -329,8 +339,9 @@ export default async function handler(req, res) {
           actions.push({ type: 'search_plate', params: { license_plate: plate || '' } });
           if (!plate) requested_fields.push({ key: 'license_plate', label: 'Placa do veículo', type: 'text' });
         } else if (problem) {
-          actions.push({ type: 'diagnose_quote', params: { license_plate: plate || '', problem_description: lastUser } });
-          if (!plate) requested_fields.push({ key: 'license_plate', label: 'Placa do veículo', type: 'text' });
+          actions.push({ type: 'diagnose', params: { problem_description: lastUser } });
+          if (plate) actions.push({ type: 'diagnose_quote', params: { license_plate: plate, problem_description: lastUser } });
+          // sem placa, primeiro diagnóstico; depois ofereça criar cotação
         }
         plan = { assistant_message: 'Ok, preciso de alguns dados para continuar.', requested_fields, actions };
       }
@@ -338,9 +349,43 @@ export default async function handler(req, res) {
       const performed = [];
       const idMap = {};
       const provided = context?.provided_fields || {};
+      const lastUser = [...messages].reverse().find(m => m.role === 'user')?.content || '';
       for (const action of actions) {
         const type = String(action?.type || '');
         const p = { ...(action?.params || {}) };
+        if (type === 'diagnose') {
+          const problemDescription = String(p?.problem_description || provided?.problem_description || lastUser || '').trim();
+          const apiKeyDiag = process.env.OPENAI_API_KEY;
+          const modelDiag = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+          let diag = null;
+          if (apiKeyDiag) {
+            const prompt = [
+              'Você é um mecânico experiente. Receba um relato de problema e gere um diagnóstico preliminar em JSON:',
+              'Campos: diagnosis_summary, probable_causes[], recommended_services[].',
+              `Problema relatado: ${problemDescription}`
+            ].join('\n');
+            const resp = await fetch('https://api.openai.com/v1/chat/completions', {
+              method: 'POST',
+              headers: { 'Authorization': `Bearer ${apiKeyDiag}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                model: modelDiag,
+                messages: [{ role: 'system', content: 'Assistente de oficina mecânica.' }, { role: 'user', content: prompt }],
+                temperature: 0.2,
+                response_format: { type: 'json_object' }
+              })
+            });
+            const json = await resp.json();
+            const content = json?.choices?.[0]?.message?.content || '';
+            try { diag = JSON.parse(content); } catch { diag = null; }
+          }
+          performed.push({
+            type,
+            diagnosis_summary: diag?.diagnosis_summary || null,
+            probable_causes: diag?.probable_causes || [],
+            recommended_services: diag?.recommended_services || []
+          });
+          continue;
+        }
         if (type === 'create_customer') {
           const name = String(p?.name || provided?.name || '').trim();
           const phone = String(p?.phone || provided?.phone || '').trim() || null;

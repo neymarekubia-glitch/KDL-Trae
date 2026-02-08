@@ -119,6 +119,53 @@ export default function AIAssistant() {
         {lastActions.length > 0 && (
           <div className="mt-6 space-y-6">
             {lastActions.map((a, i) => {
+              if (a.type === "diagnose") {
+                return (
+                  <Card key={i} className="shadow-lg border-0">
+                    <CardHeader className="border-b bg-gray-50">
+                      <CardTitle>Diagnóstico preliminar</CardTitle>
+                    </CardHeader>
+                    <CardContent className="p-6 space-y-3">
+                      {a.diagnosis_summary && (
+                        <div className="space-y-1">
+                          <Label>Resumo</Label>
+                          <p className="text-gray-700">{a.diagnosis_summary}</p>
+                        </div>
+                      )}
+                      {Array.isArray(a.probable_causes) && a.probable_causes.length > 0 && (
+                        <div className="space-y-1">
+                          <Label>Causas prováveis</Label>
+                          <ul className="list-disc pl-5 text-sm text-gray-700">
+                            {a.probable_causes.map((c, idx) => <li key={idx}>{c}</li>)}
+                          </ul>
+                        </div>
+                      )}
+                      {Array.isArray(a.recommended_services) && a.recommended_services.length > 0 && (
+                        <div className="space-y-1">
+                          <Label>Itens recomendados</Label>
+                          <ul className="list-disc pl-5 text-sm text-gray-700">
+                            {a.recommended_services.map((s, idx) => <li key={idx}>{s?.name || String(s)}</li>)}
+                          </ul>
+                        </div>
+                      )}
+                      <div className="flex gap-3 pt-2">
+                        <Button
+                          onClick={() => sendText("criar cotação", { diagnosis_last: a })}
+                          className="bg-blue-600 hover:bg-blue-700"
+                        >
+                          Criar cotação a partir deste diagnóstico
+                        </Button>
+                        <Button
+                          onClick={() => sendText("cadastrar cliente")}
+                          variant="outline"
+                        >
+                          Cadastrar cliente
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              }
               if (a.type === "diagnose_quote" && a.quote_id) {
                 return (
                   <Card key={i} className="shadow-lg border-0">
