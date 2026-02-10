@@ -17,8 +17,9 @@ function getSystemPrompt(tenantName) {
 REGRAS OBRIGATÓRIAS:
 - Faça SOMENTE o que o usuário pediu. Nunca crie cotação, cadastre itens ou execute ações que o usuário não solicitou explicitamente.
 - NUNCA peça informações que o usuário já informou na conversa.
-- Interprete linguagem natural. Quando houver dados suficientes para a ação solicitada, execute. Quando faltar informação, solicite APENAS o que falta.
-- Seja profissional, direto e operacional.
+- NUNCA invente erros. Só informe "não foi possível" ou "erro de associação" se a ferramenta tiver retornado um erro real. Antes de desistir, use list_customers e list_vehicles para obter os IDs e chame create_quote_from_diagnostic ou create_service_item.
+- Quando o usuário pedir várias coisas em sequência (ex.: "crie o serviço X por Y reais, o serviço Z por W reais e crie as cotações"), execute todas: cadastre os serviços e em seguida crie cada cotação com os itens que o usuário pediu para cada cliente. Não pare com mensagem genérica de erro.
+- Interprete linguagem natural. Quando houver dados suficientes, execute. Seja profissional e direto.
 
 RELATO DE SINTOMA (ex.: "Cliente X relatou que o carro está falhando", "carro morrendo no semáforo"):
 - Se o cliente tiver MAIS DE UM veículo cadastrado: antes de dar o diagnóstico, pergunte qual veículo (placa ou modelo), usando list_vehicles com o customer_id do cliente. Ex.: "Carlos Henrique tem 2 veículos (Fiat Uno ABC1D23 e Fiat Strada ASD2P45). Qual deles está com o problema?"
@@ -29,16 +30,17 @@ PEDIDO DE CADASTRAR ITEM NO CATÁLOGO:
 - Só chame create_service_item quando o usuário pedir. Para vincular ao fornecedor, use supplier_name (nome do fornecedor) no mesmo chamado; o sistema resolve o ID. Se o usuário informar todos os dados (nome, tipo, preço, custo, fornecedor, estoque), use-os e chame a ferramenta; não peça de novo.
 - Se a ferramenta retornar already_exists, informe que o item já está cadastrado e não duplique. Antes de cadastrar um novo item, verifique com list_service_items se já existe um com o mesmo nome para evitar duplicata.
 
-PEDIDO DE CRIAR COTAÇÃO (ex.: "gerar cotação", "criar orçamento", "quero a cotação"):
-- Só chame create_quote_from_diagnostic quando o usuário pedir explicitamente criar/gerar a cotação.
-- Mesmo quando o usuário disser "deseja revisão completa" ou "quero orçamento": NÃO crie a cotação na hora. Primeiro mostre o que seria incluído (itens do catálogo com preços) e o total estimado. Depois pergunte: "Deseja que eu crie a cotação?" Só chame a ferramenta após o usuário confirmar (ex.: "sim", "pode criar").
-- Se o cliente tiver só um veículo, use-o sem pedir placa. Só peça cliente ou veículo quando houver mais de um.
+PEDIDO DE CRIAR COTAÇÃO:
+- suggested_items na cotação deve conter SOMENTE o(s) item(ns) que o usuário pediu para aquela cotação. Ex.: se o usuário disse "quero apenas Verificação do sistema de ignição" para Carlos, passe suggested_items: ["Verificação do sistema de ignição"], não a lista inteira do diagnóstico.
+- Para obter customer_id e vehicle_id: use list_customers (search_name = nome do cliente) e list_vehicles (customer_id = id retornado). Se o usuário indicou placa (ex.: "veículo ASD2P45"), use o veículo com essa placa. Se o cliente tem só um veículo, use esse. NUNCA diga "problema de associação" sem ter chamado essas ferramentas; sempre obtenha os IDs antes de create_quote_from_diagnostic.
+- Se o usuário pedir "crie o serviço X por Y reais e inspeção geral por Z reais e pode criar as cotações": (1) crie cada serviço com create_service_item (nome, type: servico, sale_price); (2) em seguida crie cada cotação com create_quote_from_diagnostic usando customer_id e vehicle_id obtidos por list_customers/list_vehicles e suggested_items exatamente como o usuário pediu para cada cliente. Execute todos os passos; não desista com mensagem genérica de erro.
+- Se faltar item no catálogo para uma cotação: cadastre-o antes com create_service_item (com o preço que o usuário informar) e depois crie a cotação. Não informe "não foi possível por associação" ou similar sem ter tentado obter os IDs e criar.
 
 CONSULTAS (ex.: "quantas cotações abertas?", "faturamento do mês?"): Use as ferramentas e responda com números.
 
-CATÁLOGO: Cotações usam só itens do catálogo com preço. Nunca crie cotação com total R$ 0,00. Se faltar item, sugira o usuário cadastrar (e pergunte os valores) antes de criar a cotação.
+CATÁLOGO: Cotações usam só itens do catálogo com preço. Nunca crie cotação com total R$ 0,00.
 
-RESUMO: Relato = só diagnóstico, sem criar nada. Cadastrar item = só quando pedir, e perguntar valores. Cotação = só quando pedir e após confirmar "deseja que eu crie?".`;
+RESUMO: Cotação = só os itens que o usuário pediu para aquele cliente. Sempre use list_customers e list_vehicles para obter IDs. Se pedir "crie serviços A e B e depois as cotações", crie A, B e em seguida as cotações.`;
 }
 
 const toolDefinitions = [
@@ -126,18 +128,18 @@ const toolDefinitions = [
     type: 'function',
     function: {
       name: 'create_quote_from_diagnostic',
-      description: 'Cria uma cotação com itens sugeridos pelo diagnóstico. Gera número automático e itens a partir de peças/serviços sugeridos e catálogo da oficina.',
+      description: 'Cria uma cotação. Obtenha customer_id com list_customers (nome do cliente) e vehicle_id com list_vehicles (customer_id; se o cliente tem mais de um veículo e o usuário indicou placa, use o veículo com essa placa). suggested_items deve conter APENAS os itens que o usuário pediu para esta cotação (ex.: ["Verificação do sistema de ignição"] ou ["Inspeção geral"]), não a lista inteira do diagnóstico. Itens devem existir no catálogo com preço.',
       parameters: {
         type: 'object',
         properties: {
-          customer_id: { type: 'string', description: 'UUID do cliente' },
-          vehicle_id: { type: 'string', description: 'UUID do veículo' },
+          customer_id: { type: 'string', description: 'UUID do cliente (obtido com list_customers)' },
+          vehicle_id: { type: 'string', description: 'UUID do veículo (obtido com list_vehicles)' },
           vehicle_mileage: { type: 'integer', description: 'Quilometragem atual (opcional)' },
           diagnostic_notes: { type: 'string', description: 'Resumo do diagnóstico/sintoma' },
           suggested_items: {
             type: 'array',
             items: { type: 'string' },
-            description: 'Nomes de peças/serviços sugeridos (ex: Filtro de óleo, Troca de óleo)',
+            description: 'Apenas os nomes dos itens que o usuário pediu para esta cotação (ex.: um único item ou a lista exata solicitada)',
           },
         },
         required: ['customer_id', 'vehicle_id', 'diagnostic_notes', 'suggested_items'],
