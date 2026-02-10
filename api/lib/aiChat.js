@@ -27,16 +27,19 @@ RELATO DE SINTOMA (ex.: "Cliente X relatou que o carro está falhando", "carro m
 - Responda SOMENTE com o diagnóstico técnico (causas prováveis, peças sugeridas, serviços sugeridos, tempo estimado). Use get_diagnostic_suggestions. NÃO chame create_quote_from_diagnostic nem create_service_item. Pode encerrar com: "Se quiser cadastrar itens no catálogo ou gerar uma cotação depois, é só pedir."
 
 PEDIDO DE CADASTRAR ITEM NO CATÁLOGO:
-- Só chame create_service_item quando o usuário pedir. Para vincular ao fornecedor, use supplier_name (nome do fornecedor) no mesmo chamado; o sistema resolve o ID. Se o usuário informar todos os dados (nome, tipo, preço, custo, fornecedor, estoque), use-os e chame a ferramenta; não peça de novo.
-- Se a ferramenta retornar already_exists, informe que o item já está cadastrado e não duplique. Antes de cadastrar um novo item, verifique com list_service_items se já existe um com o mesmo nome para evitar duplicata.
+- NUNCA invente preço. Se o usuário pedir cadastrar um ou mais serviços/itens sem informar o preço de venda (ex.: "crie os serviços Revisão completa, Inspeção geral e Verificação do sistema de ignição"), pergunte antes: "Qual o preço de venda para cada um?" ou "Quais os preços de venda para [lista]?" Só chame create_service_item quando tiver o sale_price informado pelo usuário para cada item.
+- Para vincular ao fornecedor, use supplier_name no mesmo chamado. Se o usuário informar todos os dados (nome, tipo, preço, custo), use-os; não peça de novo. Se a ferramenta retornar already_exists, informe que o item já está cadastrado. Verifique com list_service_items se já existe item com o mesmo nome para evitar duplicata.
 
 PEDIDO DE CRIAR COTAÇÃO:
-- suggested_items na cotação deve conter SOMENTE o(s) item(ns) que o usuário pediu para aquela cotação. Ex.: se o usuário disse "quero apenas Verificação do sistema de ignição" para Carlos, passe suggested_items: ["Verificação do sistema de ignição"], não a lista inteira do diagnóstico.
-- Para obter customer_id e vehicle_id: use list_customers (search_name = nome do cliente) e list_vehicles (customer_id = id retornado). Se o usuário indicou placa (ex.: "veículo ASD2P45"), use o veículo com essa placa. Se o cliente tem só um veículo, use esse. NUNCA diga "problema de associação" sem ter chamado essas ferramentas; sempre obtenha os IDs antes de create_quote_from_diagnostic.
+- Se o cliente tiver MAIS DE UM veículo: antes de criar a cotação, use list_vehicles(customer_id) e pergunte qual veículo (placa ou modelo). Só chame create_quote_from_diagnostic depois que o usuário indicar o veículo (ou use a placa que ele já informou na conversa). Se o cliente tem só um veículo, use esse sem perguntar.
+- suggested_items na cotação deve conter SOMENTE o(s) item(ns) que o usuário pediu para aquela cotação.
+- Para obter customer_id e vehicle_id: use list_customers (search_name = nome do cliente) e list_vehicles (customer_id). Se o usuário indicou placa, use o veículo com essa placa. NUNCA diga "problema de associação" sem ter chamado essas ferramentas.
 - Se o usuário pedir "crie o serviço X por Y reais e inspeção geral por Z reais e pode criar as cotações": (1) crie cada serviço com create_service_item (nome, type: servico, sale_price); (2) em seguida crie cada cotação com create_quote_from_diagnostic usando customer_id e vehicle_id obtidos por list_customers/list_vehicles e suggested_items exatamente como o usuário pediu para cada cliente. Execute todos os passos; não desista com mensagem genérica de erro.
 - Se faltar item no catálogo para uma cotação: cadastre-o antes com create_service_item (com o preço que o usuário informar) e depois crie a cotação. Não informe "não foi possível por associação" ou similar sem ter tentado obter os IDs e criar.
 
-CONSULTAS (ex.: "quantas cotações abertas?", "faturamento do mês?"): Use as ferramentas e responda com números.
+APROVAR COTAÇÕES: Quando o usuário pedir aprovar cotações (ex.: "aprovar as 3 cotações", "quero aprovar as cotações abertas"), use list_quotes com status em_analise para obter os id das cotações e chame approve_quotes com a lista de quote_ids. Você tem capacidade de aprovar cotações; não diga que não pode.
+
+CONSULTAS (ex.: "quantas cotações abertas?", "faturamento do mês?", "qual seria meu lucro se aprovar todas?"): Use as ferramentas. Para lucro, use get_dashboard_stats ou list_quotes e list_service_items/catálogo para custos; se custo for zero, lucro = total de venda.
 
 CATÁLOGO: Cotações usam só itens do catálogo com preço. Nunca crie cotação com total R$ 0,00.
 
@@ -121,6 +124,24 @@ const toolDefinitions = [
         properties: {
           status: { type: 'string', description: 'em_analise, aprovada, recusada ou concluida (opcional)' },
         },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'approve_quotes',
+      description: 'Aprova uma ou mais cotações (status em_analise → aprovada) e gera ordem de serviço para cada uma. Use list_quotes com status em_analise para obter os quote_id antes, se o usuário pedir "aprovar as 3 cotações" ou "quero aprovar as cotações abertas".',
+      parameters: {
+        type: 'object',
+        properties: {
+          quote_ids: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Lista de UUIDs das cotações a aprovar',
+          },
+        },
+        required: ['quote_ids'],
       },
     },
   },
@@ -247,7 +268,7 @@ const toolDefinitions = [
     type: 'function',
     function: {
       name: 'create_service_item',
-      description: 'Cadastra item no catálogo: produto, peça ou serviço. Pode vincular fornecedor pelo nome (supplier_name) ou UUID (supplier_id). Não duplica: se já existir item com o mesmo nome, retorna aviso.',
+      description: 'Cadastra item no catálogo: produto, peça ou serviço. NUNCA invente preço: sale_price deve ser o valor informado pelo usuário. Se o usuário pedir cadastrar vários itens sem informar preços, pergunte os preços antes de chamar esta ferramenta. Pode vincular fornecedor por supplier_name. Não duplica: se já existir item com o mesmo nome, retorna aviso.',
       parameters: {
         type: 'object',
         properties: {
@@ -330,6 +351,59 @@ async function executeTool(name, args, supabase, tenantId) {
       const { data, error } = await q;
       if (error) return { error: error.message };
       return { quotes: data || [] };
+    }
+
+    case 'approve_quotes': {
+      const ids = Array.isArray(args.quote_ids) ? args.quote_ids.filter((id) => id && String(id).trim()) : [];
+      if (ids.length === 0) return { error: 'quote_ids (array com pelo menos um UUID) é obrigatório' };
+      const results = [];
+      for (const quoteId of ids) {
+        const { data: quote, error: qErr } = await supabase
+          .from('quotes')
+          .select('id, quote_number, customer_id, vehicle_id, vehicle_mileage')
+          .eq('id', quoteId)
+          .eq('tenant_id', t)
+          .eq('status', 'em_analise')
+          .maybeSingle();
+        if (qErr) {
+          results.push({ quote_id: quoteId, error: qErr.message });
+          continue;
+        }
+        if (!quote) {
+          results.push({ quote_id: quoteId, error: 'Cotação não encontrada ou já não está em análise' });
+          continue;
+        }
+        const { error: upErr } = await supabase
+          .from('quotes')
+          .update({ status: 'aprovada', approved_date: new Date().toISOString() })
+          .eq('id', quoteId)
+          .eq('tenant_id', t);
+        if (upErr) {
+          results.push({ quote_id: quoteId, error: upErr.message });
+          continue;
+        }
+        const orderNumber = `OS-${quote.quote_number}`;
+        const { data: serviceOrder, error: soErr } = await supabase
+          .from('service_orders')
+          .insert({
+            quote_id: quote.id,
+            order_number: orderNumber,
+            customer_id: quote.customer_id,
+            vehicle_id: quote.vehicle_id,
+            vehicle_mileage: quote.vehicle_mileage || null,
+            status: 'aguardando',
+            tenant_id: t,
+          })
+          .select('id, order_number')
+          .single();
+        if (soErr) {
+          results.push({ quote_id: quoteId, approved: true, order_error: soErr.message });
+        } else {
+          results.push({ quote_id: quoteId, approved: true, order_number: serviceOrder.order_number, service_order_id: serviceOrder.id });
+        }
+      }
+      const okCount = results.filter((r) => r.approved).length;
+      return { results, message: `${okCount} cotação(ões) aprovada(s).${okCount < results.length ? ' Algumas falharam.' : ''}` };
     }
 
     case 'list_service_items': {
