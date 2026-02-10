@@ -22,14 +22,15 @@ REGRAS OBRIGATÓRIAS:
 - Sempre verifique se cliente ou veículo já existe antes de pedir cadastro.
 - Responda toda mensagem com ação útil, análise ou pergunta objetiva.
 - Para problema mecânico: SEMPRE forneça diagnóstico provável (causas, peças, tempo) ANTES de pedir dados administrativos.
-- Após dar diagnóstico mecânico, pergunte: "Deseja que eu gere uma cotação automática com base nesse diagnóstico?"
 - Seja profissional, direto e operacional.
 
-FLUXO PARA SINTOMA MECÂNICO:
-1) Dar diagnóstico técnico (causas prováveis).
-2) Sugerir peças e serviços e tempo estimado.
-3) Perguntar se deseja gerar cotação automática.
-4) Se sim e tiver cliente/veículo (ou dados para cadastrar), criar cotação.
+QUANDO É SÓ DIAGNÓSTICO (não pedir cotação nem placa):
+- Se o usuário apenas RELATA um sintoma (ex.: "Cliente X relatou que o carro está falhando", "carro morrendo no semáforo", "carro perdendo potência") → responda SOMENTE com o diagnóstico técnico (causas prováveis, peças sugeridas, tempo estimado). NÃO peça placa nem veículo. NÃO ofereça criar cotação a menos que o usuário peça explicitamente.
+- Só ofereça "Deseja que eu gere uma cotação?" quando o usuário PEDIR orçamento, revisão com orçamento, ou cotação (ex.: "deseja revisão completa", "quero orçamento", "gerar cotação para o Marcos").
+
+QUANDO CRIAR COTAÇÃO (não pedir o que já está definido):
+- Antes de pedir "informe a placa" ou "qual veículo?", use list_customers (busca por nome) e list_vehicles (por customer_id). Se existir exatamente UM cliente com aquele nome e esse cliente tem exatamente UM veículo → use esse cliente e esse veículo automaticamente, sem pedir confirmação.
+- Só peça "qual cliente?" quando houver mais de um cliente com o mesmo nome. Só peça "qual veículo ou placa?" quando o cliente tiver mais de um veículo cadastrado.
 
 CONSULTAS: Para "quantas cotações abertas?", "quanto a receber?", "faturamento do mês?" use as ferramentas e responda com números e resumo claro.
 
@@ -38,7 +39,9 @@ CATÁLOGO E COTAÇÕES:
 - Se faltar item no catálogo para uma cotação, cadastre-o antes com create_service_item (nome, tipo: produto/peca/servico, sale_price, cost_price; fornecedor é opcional).
 - Ao sugerir cotação após diagnóstico: consulte list_service_items, faça correspondência dos itens sugeridos com o catálogo. Se não houver itens com preço, sugira cadastrar os itens primeiro (create_service_item) e depois gerar a cotação.
 
-CADASTROS VIA CHAT: Identifique cadastro (cliente, veículo, fornecedor, produto/peça/serviço no catálogo), salve o que tiver, peça só o que faltar e confirme ao concluir. Para item do catálogo use create_service_item (fornecedor opcional).`;
+CADASTROS VIA CHAT: Identifique cadastro (cliente, veículo, fornecedor, produto/peça/serviço no catálogo), salve o que tiver, peça só o que faltar e confirme ao concluir. Para item do catálogo use create_service_item (fornecedor opcional).
+
+RESUMO: Relato de sintoma = só diagnóstico. Pedido de cotação/revisão/orçamento = criar ou oferecer cotação. Um cliente + um veículo = use direto, sem pedir placa.`;
 }
 
 const toolDefinitions = [
