@@ -21,13 +21,13 @@ REGRAS OBRIGATÓRIAS:
 - Seja profissional, direto e operacional.
 
 RELATO DE SINTOMA (ex.: "Cliente X relatou que o carro está falhando", "carro morrendo no semáforo"):
-- Responda SOMENTE com o diagnóstico técnico (causas prováveis, peças sugeridas, serviços sugeridos, tempo estimado). Use get_diagnostic_suggestions para isso.
-- NÃO chame create_quote_from_diagnostic. NÃO chame create_service_item. NÃO cadastre nada. NÃO crie cotação.
-- Pode encerrar com: "Se quiser cadastrar itens no catálogo ou gerar uma cotação depois, é só pedir." Mas não faça nada além do diagnóstico até o usuário pedir.
+- Se o cliente tiver MAIS DE UM veículo cadastrado: antes de dar o diagnóstico, pergunte qual veículo (placa ou modelo), usando list_vehicles com o customer_id do cliente. Ex.: "Carlos Henrique tem 2 veículos (Fiat Uno ABC1D23 e Fiat Strada ASD2P45). Qual deles está com o problema?"
+- Se o cliente tiver só um veículo, vá direto ao diagnóstico.
+- Responda SOMENTE com o diagnóstico técnico (causas prováveis, peças sugeridas, serviços sugeridos, tempo estimado). Use get_diagnostic_suggestions. NÃO chame create_quote_from_diagnostic nem create_service_item. Pode encerrar com: "Se quiser cadastrar itens no catálogo ou gerar uma cotação depois, é só pedir."
 
 PEDIDO DE CADASTRAR ITEM NO CATÁLOGO:
-- Só chame create_service_item quando o usuário pedir explicitamente ("cadastrar produto", "cadastrar peça", "cadastrar serviço").
-- Antes de cadastrar, pergunte o valor (preço de venda e, se aplicável, custo) que o usuário quer para cada item. Não assuma valores.
+- Só chame create_service_item quando o usuário pedir. Para vincular ao fornecedor, use supplier_name (nome do fornecedor) no mesmo chamado; o sistema resolve o ID. Se o usuário informar todos os dados (nome, tipo, preço, custo, fornecedor, estoque), use-os e chame a ferramenta; não peça de novo.
+- Se a ferramenta retornar already_exists, informe que o item já está cadastrado e não duplique. Antes de cadastrar um novo item, verifique com list_service_items se já existe um com o mesmo nome para evitar duplicata.
 
 PEDIDO DE CRIAR COTAÇÃO (ex.: "gerar cotação", "criar orçamento", "quero a cotação"):
 - Só chame create_quote_from_diagnostic quando o usuário pedir explicitamente criar/gerar a cotação.
@@ -245,7 +245,7 @@ const toolDefinitions = [
     type: 'function',
     function: {
       name: 'create_service_item',
-      description: 'Cadastra item no catálogo: produto, peça ou serviço. Fornecedor é opcional. Use para cadastrar antes de gerar cotações.',
+      description: 'Cadastra item no catálogo: produto, peça ou serviço. Pode vincular fornecedor pelo nome (supplier_name) ou UUID (supplier_id). Não duplica: se já existir item com o mesmo nome, retorna aviso.',
       parameters: {
         type: 'object',
         properties: {
@@ -254,6 +254,7 @@ const toolDefinitions = [
           sale_price: { type: 'number', description: 'Preço de venda' },
           cost_price: { type: 'number', description: 'Preço de custo (pode ser 0 para serviço)' },
           supplier_id: { type: 'string', description: 'UUID do fornecedor (opcional)' },
+          supplier_name: { type: 'string', description: 'Nome do fornecedor para vincular (opcional; use se não tiver UUID)' },
           current_stock: { type: 'integer', description: 'Estoque atual (opcional, default 0)' },
           minimum_stock: { type: 'integer', description: 'Estoque mínimo (opcional, default 0)' },
         },
@@ -430,29 +431,55 @@ async function executeTool(name, args, supabase, tenantId) {
     }
 
     case 'create_service_item': {
-      const { name, type: itemType, sale_price, cost_price, supplier_id, current_stock, minimum_stock } = args;
+      const { name, type: itemType, sale_price, cost_price, supplier_id, supplier_name, current_stock, minimum_stock } = args;
       if (!name || !itemType) return { error: 'name and type (produto, peca or servico) are required' };
       const validType = ['servico', 'peca', 'produto'].includes(String(itemType).toLowerCase()) ? String(itemType).toLowerCase() : 'servico';
       const sale = Number(sale_price);
       const cost = Number(cost_price);
       if (!Number.isFinite(sale) || sale < 0) return { error: 'sale_price must be a non-negative number' };
+      const nameTrim = String(name).trim();
+      const { data: existing } = await supabase
+        .from('service_items')
+        .select('id, name')
+        .eq('tenant_id', t)
+        .ilike('name', nameTrim)
+        .limit(1)
+        .maybeSingle();
+      if (existing) {
+        return { error: 'already_exists', message: `Item "${existing.name}" já está cadastrado no catálogo. Não foi criado duplicado.` };
+      }
+      let resolvedSupplierId = null;
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (supplier_id && uuidRegex.test(String(supplier_id).trim())) {
+        resolvedSupplierId = supplier_id.trim();
+      } else if (supplier_name && String(supplier_name).trim()) {
+        const { data: supRow } = await supabase
+          .from('suppliers')
+          .select('id')
+          .eq('tenant_id', t)
+          .ilike('name', `%${String(supplier_name).trim()}%`)
+          .limit(1)
+          .maybeSingle();
+        if (supRow) resolvedSupplierId = supRow.id;
+      }
       const { data, error } = await supabase
         .from('service_items')
         .insert({
           tenant_id: t,
-          name: String(name).trim(),
+          name: nameTrim,
           type: validType,
           sale_price: Number.isFinite(sale) ? sale : 0,
           cost_price: Number.isFinite(cost) ? cost : 0,
-          supplier_id: supplier_id || null,
+          supplier_id: resolvedSupplierId,
           current_stock: Number.isFinite(Number(current_stock)) ? Math.max(0, Number(current_stock)) : 0,
           minimum_stock: Number.isFinite(Number(minimum_stock)) ? Math.max(0, Number(minimum_stock)) : 0,
           is_active: true,
         })
-        .select('id, name, type, sale_price')
+        .select('id, name, type, sale_price, supplier_id')
         .single();
       if (error) return { error: error.message };
-      return { created: data, message: `Item "${data.name}" (${validType}) cadastrado no catálogo com preço R$ ${Number(data.sale_price).toFixed(2)}.` };
+      const supplierMsg = resolvedSupplierId ? ' (fornecedor vinculado)' : '';
+      return { created: data, message: `Item "${data.name}" (${validType}) cadastrado no catálogo com preço R$ ${Number(data.sale_price).toFixed(2)}${supplierMsg}.` };
     }
 
     case 'create_quote_from_diagnostic': {
