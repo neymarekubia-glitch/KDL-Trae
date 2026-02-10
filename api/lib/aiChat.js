@@ -33,7 +33,12 @@ FLUXO PARA SINTOMA MECÂNICO:
 
 CONSULTAS: Para "quantas cotações abertas?", "quanto a receber?", "faturamento do mês?" use as ferramentas e responda com números e resumo claro.
 
-CADASTROS VIA CHAT: Identifique cadastro (cliente, veículo, fornecedor), salve o que tiver, peça só o que faltar e confirme ao concluir.`;
+CATÁLOGO E COTAÇÕES:
+- Cotações devem usar SOMENTE itens do catálogo que tenham preço de venda. Nunca crie cotação com total R$ 0,00.
+- Se faltar item no catálogo para uma cotação, cadastre-o antes com create_service_item (nome, tipo: produto/peca/servico, sale_price, cost_price; fornecedor é opcional).
+- Ao sugerir cotação após diagnóstico: consulte list_service_items, faça correspondência dos itens sugeridos com o catálogo. Se não houver itens com preço, sugira cadastrar os itens primeiro (create_service_item) e depois gerar a cotação.
+
+CADASTROS VIA CHAT: Identifique cadastro (cliente, veículo, fornecedor, produto/peça/serviço no catálogo), salve o que tiver, peça só o que faltar e confirme ao concluir. Para item do catálogo use create_service_item (fornecedor opcional).`;
 }
 
 const toolDefinitions = [
@@ -236,6 +241,26 @@ const toolDefinitions = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'create_service_item',
+      description: 'Cadastra item no catálogo: produto, peça ou serviço. Fornecedor é opcional. Use para cadastrar antes de gerar cotações.',
+      parameters: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', description: 'Nome do item (ex: Óleo 5W30, Troca de Óleo, Jogo de Velas)' },
+          type: { type: 'string', enum: ['produto', 'peca', 'servico'], description: 'Tipo: produto, peca ou servico' },
+          sale_price: { type: 'number', description: 'Preço de venda' },
+          cost_price: { type: 'number', description: 'Preço de custo (pode ser 0 para serviço)' },
+          supplier_id: { type: 'string', description: 'UUID do fornecedor (opcional)' },
+          current_stock: { type: 'integer', description: 'Estoque atual (opcional, default 0)' },
+          minimum_stock: { type: 'integer', description: 'Estoque mínimo (opcional, default 0)' },
+        },
+        required: ['name', 'type', 'sale_price'],
+      },
+    },
+  },
 ];
 
 async function executeTool(name, args, supabase, tenantId) {
@@ -404,22 +429,48 @@ async function executeTool(name, args, supabase, tenantId) {
       return { created: data, message: `Fornecedor ${data.name} cadastrado.` };
     }
 
+    case 'create_service_item': {
+      const { name, type: itemType, sale_price, cost_price, supplier_id, current_stock, minimum_stock } = args;
+      if (!name || !itemType) return { error: 'name and type (produto, peca or servico) are required' };
+      const validType = ['servico', 'peca', 'produto'].includes(String(itemType).toLowerCase()) ? String(itemType).toLowerCase() : 'servico';
+      const sale = Number(sale_price);
+      const cost = Number(cost_price);
+      if (!Number.isFinite(sale) || sale < 0) return { error: 'sale_price must be a non-negative number' };
+      const { data, error } = await supabase
+        .from('service_items')
+        .insert({
+          tenant_id: t,
+          name: String(name).trim(),
+          type: validType,
+          sale_price: Number.isFinite(sale) ? sale : 0,
+          cost_price: Number.isFinite(cost) ? cost : 0,
+          supplier_id: supplier_id || null,
+          current_stock: Number.isFinite(Number(current_stock)) ? Math.max(0, Number(current_stock)) : 0,
+          minimum_stock: Number.isFinite(Number(minimum_stock)) ? Math.max(0, Number(minimum_stock)) : 0,
+          is_active: true,
+        })
+        .select('id, name, type, sale_price')
+        .single();
+      if (error) return { error: error.message };
+      return { created: data, message: `Item "${data.name}" (${validType}) cadastrado no catálogo com preço R$ ${Number(data.sale_price).toFixed(2)}.` };
+    }
+
     case 'create_quote_from_diagnostic': {
       const { customer_id, vehicle_id, vehicle_mileage, diagnostic_notes, suggested_items } = args;
       if (!customer_id || !vehicle_id || !diagnostic_notes || !Array.isArray(suggested_items)) {
         return { error: 'customer_id, vehicle_id, diagnostic_notes and suggested_items (array) are required' };
       }
-      const { data: existingQuotes } = await supabase.from('quotes').select('id').eq('tenant_id', t);
-      const nextNum = (existingQuotes?.length || 0) + 1;
-      const quote_number = `COT-${String(nextNum).padStart(6, '0')}`;
-      const service_date = new Date().toISOString().split('T')[0];
       const { data: catalog } = await supabase.from('service_items').select('id, name, type, sale_price, cost_price').eq('tenant_id', t).eq('is_active', true);
       const itemsToAdd = [];
       const used = new Set();
       for (const suggested of suggested_items) {
-        const nameLower = String(suggested).toLowerCase();
-        const match = (catalog || []).find((c) => c.name.toLowerCase().includes(nameLower) || nameLower.includes(c.name.toLowerCase()));
-        if (match && !used.has(match.id)) {
+        const nameLower = String(suggested).toLowerCase().trim();
+        const match = (catalog || []).find((c) => {
+          if (used.has(c.id)) return false;
+          const cName = (c.name || '').toLowerCase();
+          return cName.includes(nameLower) || nameLower.includes(cName) || nameLower.split(/\s+/).some((w) => w.length > 2 && cName.includes(w));
+        });
+        if (match && (match.sale_price || 0) > 0) {
           used.add(match.id);
           itemsToAdd.push({
             service_item_id: match.id,
@@ -430,30 +481,21 @@ async function executeTool(name, args, supabase, tenantId) {
             cost_price: match.cost_price || 0,
             total: match.sale_price || 0,
           });
-        } else if (!match && suggested) {
-          itemsToAdd.push({
-            service_item_id: null,
-            service_item_name: String(suggested).trim(),
-            service_item_type: 'servico',
-            quantity: 1,
-            unit_price: 0,
-            cost_price: 0,
-            total: 0,
-          });
         }
       }
-      if (itemsToAdd.length === 0) {
-        itemsToAdd.push({
-          service_item_id: null,
-          service_item_name: `Diagnóstico / Serviço: ${diagnostic_notes.substring(0, 80)}`,
-          service_item_type: 'servico',
-          quantity: 1,
-          unit_price: 0,
-          cost_price: 0,
-          total: 0,
-        });
-      }
       const subtotal = itemsToAdd.reduce((s, i) => s + (i.unit_price * i.quantity), 0);
+      if (itemsToAdd.length === 0 || subtotal <= 0) {
+        const missing = suggested_items.filter((s) => !itemsToAdd.some((i) => (i.service_item_name || '').toLowerCase().includes(String(s).toLowerCase()))).slice(0, 8);
+        return {
+          error: 'no_catalog_match',
+          message: 'Não foi possível criar a cotação: não há itens no catálogo com preço que correspondam aos itens sugeridos. Cadastre os itens no Catálogo (use create_service_item ou o menu Catálogo) e depois peça para gerar a cotação novamente.',
+          suggested_items_not_found: missing,
+        };
+      }
+      const { data: existingQuotes } = await supabase.from('quotes').select('id').eq('tenant_id', t);
+      const nextNum = (existingQuotes?.length || 0) + 1;
+      const quote_number = `COT-${String(nextNum).padStart(6, '0')}`;
+      const service_date = new Date().toISOString().split('T')[0];
       const total = subtotal;
       const { data: quote, error: quoteErr } = await supabase
         .from('quotes')
@@ -525,7 +567,7 @@ async function runChat(messages, tenantId, tenantName, supabase) {
   const fullMessages = [{ role: 'system', content: systemPrompt }, ...messages];
 
   let result;
-  let maxRounds = 5;
+  let maxRounds = 12;
   try {
     while (maxRounds--) {
       result = await openai.chat.completions.create({
