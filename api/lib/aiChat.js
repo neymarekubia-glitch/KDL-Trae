@@ -31,7 +31,7 @@ PEDIDO DE CADASTRAR ITEM NO CATÁLOGO:
 - Para vincular ao fornecedor, use supplier_name no mesmo chamado. Se o usuário informar todos os dados (nome, tipo, preço, custo), use-os; não peça de novo. Se a ferramenta retornar already_exists, informe que o item já está cadastrado. Verifique com list_service_items se já existe item com o mesmo nome para evitar duplicata.
 
 PEDIDO DE CRIAR COTAÇÃO:
-- Se o cliente tiver MAIS DE UM veículo: antes de criar a cotação, use list_vehicles(customer_id) e pergunte qual veículo (placa ou modelo). Só chame create_quote_from_diagnostic depois que o usuário indicar o veículo (ou use a placa que ele já informou na conversa). Se o cliente tem só um veículo, use esse sem perguntar.
+- Para CADA cliente na mesma solicitação: antes de create_quote_from_diagnostic, chame list_vehicles(customer_id). Se o cliente tiver MAIS DE UM veículo, NÃO assuma o veículo pelo texto do diagnóstico anterior; pergunte explicitamente: "Para [Nome do cliente], qual veículo? (ele/a tem X: [lista placa/modelo])". Só crie a cotação depois que o usuário indicar o veículo (ou a placa) NESSA conversa. Se o cliente tem só um veículo, use esse sem perguntar.
 - suggested_items na cotação deve conter SOMENTE o(s) item(ns) que o usuário pediu para aquela cotação.
 - Para obter customer_id e vehicle_id: use list_customers (search_name = nome do cliente) e list_vehicles (customer_id). Se o usuário indicou placa, use o veículo com essa placa. NUNCA diga "problema de associação" sem ter chamado essas ferramentas.
 - Se o usuário pedir "crie o serviço X por Y reais e inspeção geral por Z reais e pode criar as cotações": (1) crie cada serviço com create_service_item (nome, type: servico, sale_price); (2) em seguida crie cada cotação com create_quote_from_diagnostic usando customer_id e vehicle_id obtidos por list_customers/list_vehicles e suggested_items exatamente como o usuário pediu para cada cliente. Execute todos os passos; não desista com mensagem genérica de erro.
@@ -39,7 +39,7 @@ PEDIDO DE CRIAR COTAÇÃO:
 
 APROVAR COTAÇÕES: Quando o usuário pedir aprovar cotações (ex.: "aprovar as 3 cotações", "quero aprovar as cotações abertas"), use list_quotes com status em_analise para obter os id das cotações e chame approve_quotes com a lista de quote_ids. Você tem capacidade de aprovar cotações; não diga que não pode.
 
-CONSULTAS (ex.: "quantas cotações abertas?", "faturamento do mês?", "qual seria meu lucro se aprovar todas?"): Use as ferramentas. Para lucro, use get_dashboard_stats ou list_quotes e list_service_items/catálogo para custos; se custo for zero, lucro = total de venda.
+CONSULTAS E TOTAIS: Ao responder "quantas cotações abertas" ou "valor total estimado" ou "faturamento previsto", use list_quotes (status em_analise) e calcule o total SOMANDO o campo "total" de cada cotação retornada pela ferramenta. Nunca invente ou troque valores: use apenas os números retornados pela última chamada e escreva a soma correta (ex.: 150 + 700 + 400 = 1250).
 
 CATÁLOGO: Cotações usam só itens do catálogo com preço. Nunca crie cotação com total R$ 0,00.
 
@@ -149,7 +149,7 @@ const toolDefinitions = [
     type: 'function',
     function: {
       name: 'create_quote_from_diagnostic',
-      description: 'Cria uma cotação. Obtenha customer_id com list_customers (nome do cliente) e vehicle_id com list_vehicles (customer_id; se o cliente tem mais de um veículo e o usuário indicou placa, use o veículo com essa placa). suggested_items deve conter APENAS os itens que o usuário pediu para esta cotação (ex.: ["Verificação do sistema de ignição"] ou ["Inspeção geral"]), não a lista inteira do diagnóstico. Itens devem existir no catálogo com preço.',
+      description: 'Cria uma cotação. Obtenha customer_id com list_customers e vehicle_id com list_vehicles(customer_id). Se list_vehicles retornar mais de um veículo, NÃO assuma qual é; o assistente deve perguntar ao usuário qual veículo (placa ou modelo) antes de chamar esta ferramenta. suggested_items = apenas os itens pedidos para esta cotação. Itens devem existir no catálogo com preço.',
       parameters: {
         type: 'object',
         properties: {

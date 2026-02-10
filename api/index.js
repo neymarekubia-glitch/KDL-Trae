@@ -325,6 +325,12 @@ export default async function handler(req, res) {
           const body = normalizePayload(raw);
           const id = String(body?.id || '').trim();
           if (!id) return badRequest(res, 'missing_id');
+          // Desvincular perfis da empresa para não violar FK ao excluir o tenant
+          const { error: profileErr } = await supabase
+            .from('profiles')
+            .update({ tenant_id: null })
+            .eq('tenant_id', id);
+          if (profileErr) return badRequest(res, profileErr.message);
           const { error: delErr } = await supabase
             .from('tenants')
             .delete()
